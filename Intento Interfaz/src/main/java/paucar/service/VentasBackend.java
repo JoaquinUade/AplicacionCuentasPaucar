@@ -14,6 +14,7 @@ import java.util.Objects;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.uade.tpo.demo.entity.TipoCliente;
+import com.uade.tpo.demo.entity.TipoDePago;
 
 public class VentasBackend {
 
@@ -27,10 +28,6 @@ public class VentasBackend {
                                   datos JSON en objetos Java y viceversa*/
 
     private final ClientesService clientesService;
-
-    public enum TipoDePago {/*enum de tipo de pago, reemplazar en el futuro por el tipo de pago del backend */
-        TRANSFERENCIA, DEBE, EFECTIVO, MERCADO_PAGO, DEBITO, CREDITO
-    }
 
     public record VentaFilaDto(String nombre, String descripcion, BigDecimal monto, TipoDePago estado,
             Long idCliente, TipoCliente tipoCliente) {
