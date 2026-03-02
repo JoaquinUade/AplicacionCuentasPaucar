@@ -60,6 +60,7 @@ public final class Ventas extends BorderPane {
     private final VentasBackend backend = new VentasBackend(API_BASE, clientesService);
     private final java.util.concurrent.atomic.AtomicBoolean actualizandoEditor
             = new java.util.concurrent.atomic.AtomicBoolean(false);
+
     // ====== Modelo de Fila (UI de la tabla) ======
     public static class Fila {
 
@@ -453,69 +454,71 @@ public final class Ventas extends BorderPane {
             }
         });
 
-     // 2) Interceptar el clic en cada celda de la lista para forzar la selección por ÍTEM (no por índice)
-     cbCliente.setCellFactory(listView -> {
-        var cell = new javafx.scene.control.ListCell<String>() {
-            @Override protected void updateItem(String item, boolean empty) {
+        // 2) Interceptar el clic en cada celda de la lista para forzar la selección por ÍTEM (no por índice)
+        cbCliente.setCellFactory(listView -> {
+            var cell = new javafx.scene.control.ListCell<String>() {
+                @Override
+                protected void updateItem(String item, boolean empty) {
+                    super.updateItem(item, empty);
+                    setText(empty || item == null ? "" : item);
+                }
+            };
+
+            cell.addEventFilter(MouseEvent.MOUSE_PRESSED, ev -> {
+                if (!cell.isEmpty()) {
+                    String item = cell.getItem();
+
+                    // Seleccionar explícitamente por ítem y reflejar en el editor
+                    actualizandoEditor.set(true);
+                    try {
+                        cbCliente.getSelectionModel().select(item); // <- selecciono por ítem (no índice)
+                        cbCliente.setValue(item);                   // <- alinear value
+                        cbCliente.getEditor().setText(item);        // <- mostrar en el editor
+                        cbCliente.getEditor().positionCaret(item.length());
+                    } finally {
+                        actualizandoEditor.set(false);
+                    }
+
+                    // Cerrar el popup y consumir el evento para que el SelectionModel no re-seleccione por índice
+                    cbCliente.hide();
+                    ev.consume();
+                }
+            });
+
+            return cell;
+        });
+
+        // Botón del combo (lo que se ve cuando está cerrado): que muestre el texto del ítem
+        cbCliente.setButtonCell(new javafx.scene.control.ListCell<>() {
+            @Override
+            protected void updateItem(String item, boolean empty) {
                 super.updateItem(item, empty);
                 setText(empty || item == null ? "" : item);
             }
-        };
+        });
 
-        cell.addEventFilter(MouseEvent.MOUSE_PRESSED, ev -> {
-            if (!cell.isEmpty()) {
-                String item = cell.getItem();
+        // 3) NO restaures predicate en selección ni al cerrar; si querés, al ABRIR sí:
+        cbCliente.showingProperty().addListener((o, was, is) -> {
+            if (is) {
+                // Mostrar TODO al abrir (opcional). Si preferís, podés quitar esta línea también.
+                clientesFiltrados.setPredicate(s -> true);
+            }
+            // Al cerrar: NO toques el predicate (evita carreras de índice).
+        });
 
-                // Seleccionar explícitamente por ítem y reflejar en el editor
+        // 4) (Opcional) Alinear editor y value cuando se dispare la acción (Enter)
+        cbCliente.setOnAction(e -> {
+            String v = cbCliente.getValue();
+            if (v != null) {
                 actualizandoEditor.set(true);
                 try {
-                    cbCliente.getSelectionModel().select(item); // <- selecciono por ítem (no índice)
-                    cbCliente.setValue(item);                   // <- alinear value
-                    cbCliente.getEditor().setText(item);        // <- mostrar en el editor
-                    cbCliente.getEditor().positionCaret(item.length());
+                    cbCliente.getEditor().setText(v);
+                    cbCliente.getEditor().positionCaret(v.length());
                 } finally {
                     actualizandoEditor.set(false);
                 }
-
-                // Cerrar el popup y consumir el evento para que el SelectionModel no re-seleccione por índice
-                cbCliente.hide();
-                ev.consume();
             }
         });
-
-        return cell;
-     });
-
-     // Botón del combo (lo que se ve cuando está cerrado): que muestre el texto del ítem
-     cbCliente.setButtonCell(new javafx.scene.control.ListCell<>() {
-        @Override protected void updateItem(String item, boolean empty) {
-            super.updateItem(item, empty);
-            setText(empty || item == null ? "" : item);
-        }
-     });
-
-     // 3) NO restaures predicate en selección ni al cerrar; si querés, al ABRIR sí:
-     cbCliente.showingProperty().addListener((o, was, is) -> {
-        if (is) {
-            // Mostrar TODO al abrir (opcional). Si preferís, podés quitar esta línea también.
-            clientesFiltrados.setPredicate(s -> true);
-        }
-        // Al cerrar: NO toques el predicate (evita carreras de índice).
-     });
-
-     // 4) (Opcional) Alinear editor y value cuando se dispare la acción (Enter)
-     cbCliente.setOnAction(e -> {
-        String v = cbCliente.getValue();
-        if (v != null) {
-            actualizandoEditor.set(true);
-            try {
-                cbCliente.getEditor().setText(v);
-                cbCliente.getEditor().positionCaret(v.length());
-            } finally {
-                actualizandoEditor.set(false);
-            }
-        }
-     });
         return cbCliente;
     }
 
@@ -570,9 +573,11 @@ public final class Ventas extends BorderPane {
         cbProd.setPromptText("Producto");
         cbProd.setEditable(true);
 
+        final java.util.concurrent.atomic.AtomicBoolean actualizandoProd = new java.util.concurrent.atomic.AtomicBoolean(false);
+
         configurarConverterProducto(cbProd);
-        configurarAutocompletarProducto(cbProd, productosFiltrados);
-        configurarRendererProducto(cbProd);
+        configurarAutocompletarProducto(cbProd, productosFiltrados, actualizandoProd);
+        configurarRendererProducto(cbProd, actualizandoProd);
 
         // Campo cantidad
         TextField tfCant = new TextField();
@@ -632,10 +637,15 @@ public final class Ventas extends BorderPane {
 
     private void configurarAutocompletarProducto(
             ComboBox<ProductosService.ProductoItem> cbProd,
-            FilteredList<ProductosService.ProductoItem> productosFiltrados) {
+            FilteredList<ProductosService.ProductoItem> productosFiltrados,
+            java.util.concurrent.atomic.AtomicBoolean actualizandoProd) {
 
-         // 1) Filtrar en vivo mientras escribe (contiene)
-         cbProd.getEditor().textProperty().addListener((obs, TextoPrevio, TextoActual) -> {
+        // 1) Filtrar en vivo mientras escribe (contiene)
+        cbProd.getEditor().textProperty().addListener((obs, TextoPrevio, TextoActual) -> {
+            if (actualizandoProd.get()) {
+                return; // NO filtrar si estoy seteando por código
+
+            }
             String txt = (TextoActual == null ? "" : TextoActual.trim().toLowerCase());
             if (txt.isEmpty()) {
                 // Mostrar TODO cuando no hay texto
@@ -648,45 +658,84 @@ public final class Ventas extends BorderPane {
                     cbProd.show();
                 }
             }
-         });
+        });
+// 2) Al seleccionar: reflejar selección SIN tocar predicate ni limpiar editor
+        cbProd.getSelectionModel().selectedItemProperty().addListener((o, a, b) -> {
+            if (b != null) {
+                Platform.runLater(() -> {
+                    actualizandoProd.set(true);
+                    try {
+                        cbProd.setValue(b);
+                        cbProd.getEditor().setText(b.nombre());
+                        cbProd.getEditor().positionCaret(b.nombre().length());
+                    } finally {
+                        actualizandoProd.set(false);
+                    }
+                });
+            }
+        });
 
-         // 2) Al seleccionar un producto desde la lista: liberar filtro y limpiar editor
-         cbProd.getSelectionModel().selectedItemProperty().addListener((o, a, b) -> {
-            productosFiltrados.setPredicate(p -> true); // ver todo nuevamente
-            cbProd.getEditor().setText("");             // evita re-filtrar al volver a abrir
-         });
-
-         // 3) Al abrir el popup, asegurate de mostrar todo
-         cbProd.showingProperty().addListener((o, was, is) -> {
+        // 3) Al abrir el popup, asegurate de mostrar todo
+        cbProd.showingProperty().addListener((o, was, is) -> {
             if (is) {
                 productosFiltrados.setPredicate(p -> true);
             }
-         });
+        });
 
-         // 4) Al perder foco, intentá resolver el texto contra la lista (match exacto),
-         //    pero NO borres la selección si no hay match y NO limpies value cuando el editor queda vacío.
-         cbProd.getEditor().focusedProperty().addListener((o, was, is) -> {
+        // 4) Al perder foco, intentá resolver el texto contra la lista (match exacto),
+        //    pero NO borres la selección si no hay match y NO limpies value cuando el editor queda vacío.
+        cbProd.getEditor().focusedProperty().addListener((o, was, is) -> {
             if (!is) {
                 var elegido = cbProd.getConverter().fromString(cbProd.getEditor().getText());
                 if (elegido != null) {
-                    cbProd.setValue(elegido);
-                    cbProd.getEditor().setText("");     // evitar que el editor vuelva a filtrar
-                    productosFiltrados.setPredicate(p -> true);
+                    actualizandoProd.set(true);
+                    try {
+                        cbProd.setValue(elegido);
+                        cbProd.getEditor().setText(elegido.nombre());
+                        cbProd.getEditor().positionCaret(elegido.nombre().length());
+                        productosFiltrados.setPredicate(p -> true);
+                    } finally {
+                        actualizandoProd.set(false);
+                    }
                 } else {
-                    // Sin match exacto: no toco el value actual y libero el filtro
                     productosFiltrados.setPredicate(p -> true);
                 }
             }
-         });
-         }
+        });
+    }
 
-    private void configurarRendererProducto(ComboBox<ProductosService.ProductoItem> cbProd) {
-        cbProd.setCellFactory(list -> new javafx.scene.control.ListCell<>() {
-            @Override
-            protected void updateItem(ProductosService.ProductoItem item, boolean empty) {
-                super.updateItem(item, empty);
-                setText(empty || item == null ? "" : item.nombre());
-            }
+    private void configurarRendererProducto(
+            ComboBox<ProductosService.ProductoItem> cbProd,
+            java.util.concurrent.atomic.AtomicBoolean actualizandoProd) {
+        cbProd.setCellFactory(list -> {
+            javafx.scene.control.ListCell<ProductosService.ProductoItem> cell
+                    = new javafx.scene.control.ListCell<>() {
+                @Override
+                protected void updateItem(ProductosService.ProductoItem item, boolean empty) {
+                    super.updateItem(item, empty);
+                    setText(empty || item == null ? "" : item.nombre());
+                }
+            };
+
+            // Interceptar el clic: seleccionar por OBJETO, actualizar editor, cerrar y consumir
+            cell.addEventFilter(MouseEvent.MOUSE_PRESSED, ev -> {
+                if (!cell.isEmpty()) {
+                    var item = cell.getItem();
+                    actualizandoProd.set(true);
+                    try {
+                        cbProd.getSelectionModel().select(item); // seleccionar por objeto (no índice)
+                        cbProd.setValue(item);
+                        cbProd.getEditor().setText(item.nombre());
+                        cbProd.getEditor().positionCaret(item.nombre().length());
+                    } finally {
+                        actualizandoProd.set(false);
+                    }
+                    cbProd.hide();
+                    ev.consume(); // evita que el SelectionModel re-mapée por índice
+                }
+            });
+
+            return cell;
         });
         cbProd.setButtonCell(new javafx.scene.control.ListCell<>() {
             @Override
