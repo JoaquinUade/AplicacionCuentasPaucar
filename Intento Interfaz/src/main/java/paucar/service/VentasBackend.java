@@ -151,7 +151,7 @@ public class VentasBackend {
                     .build();
 
             var response = http.send(solicitud, HttpResponse.BodyHandlers.ofString());
-
+            
             if (response.statusCode() >= 200 && response.statusCode() < 300) {
 
                 var array = TraductorJSON.readTree(response.body());
@@ -165,7 +165,15 @@ public class VentasBackend {
                                 : n.hasNonNull("nombreCliente") ? n.get("nombreCliente").asText()
                                 : n.hasNonNull("nombreMesa") ? n.get("nombreMesa").asText()
                                 : "";
-
+                        // Fallback: si no vino nombre en la raíz, tomarlo de cliente.nombre
+                        if ((nombre == null || nombre.isBlank())
+                                && n.hasNonNull("cliente")
+                                && n.get("cliente").isObject()
+                                && n.get("cliente").hasNonNull("nombre")) {
+                            nombre = n.get("cliente").get("nombre").asText("").trim();
+                        } else {
+                            nombre = (nombre == null ? "" : nombre.trim());
+                        }
                         var desc = n.hasNonNull("descripcion") ? n.get("descripcion").asText() : "";
 
                         BigDecimal monto = BigDecimal.ZERO;
@@ -182,7 +190,7 @@ public class VentasBackend {
                             }
                         }
 
-// NUEVO: opcionalmente mapear idCliente y tipoCliente si vienen
+                        // NUEVO: opcionalmente mapear idCliente y tipoCliente si vienen
                         Long idCliente = null;/*inicializamos la variable idCliente valiendo null */
 
                         if (n.hasNonNull("idCliente")) {/* si el objeto JSON n tiene la clave

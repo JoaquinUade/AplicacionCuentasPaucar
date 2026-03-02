@@ -16,7 +16,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.uade.tpo.demo.entity.TipoCliente;
 
 public class ClientesService {
-private final String BASE_URL;
+
+    private final String BASE_URL;
     private final HttpClient http;
     private final ObjectMapper TraductorJSON;
 
@@ -25,7 +26,8 @@ private final String BASE_URL;
         this.http = HttpClient.newHttpClient();
         this.TraductorJSON = new ObjectMapper();
     }
-public List<String> obtenerTodosLosClientesMenosMesas() {/*Método que devuelve una lista de nombres que NO
+
+    public List<String> obtenerTodosLosClientesMenosMesas() {/*Método que devuelve una lista de nombres que NO
                                                              sean mesas */
 
         try {/*es try porqeu si la operacion falla tirara error osea ira a catch */
@@ -78,7 +80,7 @@ public List<String> obtenerTodosLosClientesMenosMesas() {/*Método que devuelve 
                           ingresados no me queda claro por que*/
     }
 
-public void crearClienteSiNoExiste(String nombre, TipoCliente tipoCli) {
+    public void crearClienteSiNoExiste(String nombre, TipoCliente tipoCli) {
         if (nombre == null || nombre.isBlank()) {/*si el nombre no es valido, o es null o solo son espacios
                                                  vacios se salga del metodo*/
             return;
@@ -116,7 +118,8 @@ public void crearClienteSiNoExiste(String nombre, TipoCliente tipoCli) {
             System.err.println("crearClienteSiNoExiste: " + e.getMessage());
         }
     }
-public Long obtenerClienteIdPorNombre(String nombre) {
+
+    public Long obtenerClienteIdPorNombre(String nombre) {
         try {
             if (nombre == null || nombre.isBlank()) {/*Si el nombre es nulo o está vacío salir del método retornando null */
                 return null;
@@ -135,15 +138,25 @@ public Long obtenerClienteIdPorNombre(String nombre) {
                 JsonNode name = null;/*Está declarando una variable llamada name de tipo JsonNode, y le está
                                   asignando el valor null porque todavía no sabe qué JSON va a guardar ahí */
 
-                if (json.isArray() && json.size() > 0) {/*Si el JSON que vino del servidor es un vector y tiene
-                                                        al menos un elemento, entonces guardá el primer elemento
-                                                        del vector en n */
-                    name = json.get(0);
-                } else if (json.isObject()) {/*Si el JSON que vino del servidor es un objeto (no un vector),
-                                            entonces guardá ese objeto directamente en name */
+                if (json.isArray()) {
+                    String buscado = (nombre == null ? "" : nombre.trim());
+                    for (JsonNode elem : json) {
+                        if (elem != null && elem.hasNonNull("nombre")) {
+                            String n = elem.get("nombre").asText("").trim();
+                            if (n.equalsIgnoreCase(buscado)) {
+                                name = elem; // usamos el match exacto
+                                break;
+                            }
+                        }
+                    }
+                } else if (json.isObject()) {
                     name = json;
-                }/*esto es para que si buscas un nombre y hay varios clientes con nombres similares te salgan
-                  todas las opciones validas en el buscador*/
+                }
+
+// Si no hubo match exacto en el array, devolvé null para no asociar mal
+                if (name == null) {
+                    return null;
+                }
 
                 if (name != null) {/*si el nombre no es nulo */
                     if (name.hasNonNull("idCliente")) {/*revisa que tenga id y que este no sea nulo */
