@@ -161,7 +161,7 @@ public class VentasBackend {
 
                     for (var n : array) {
                         String nombre
-                                = n.hasNonNull("clienteNombre") ? n.get("clienteNombre").asText()
+                                = n.hasNonNull("nombreEmpresa") ? n.get("nombreEmpresa").asText()
                                 : n.hasNonNull("nombreCliente") ? n.get("nombreCliente").asText()
                                 : n.hasNonNull("nombreMesa") ? n.get("nombreMesa").asText()
                                 : "";
@@ -246,7 +246,6 @@ public class VentasBackend {
         } catch (java.io.IOException | InterruptedException e) {
             System.err.println("Error recargar ventas: " + e.getMessage());
         }
-
         return List.of();
     }
     // =====================
