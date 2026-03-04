@@ -18,6 +18,7 @@ import javafx.scene.control.ButtonType;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
+import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TextField;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.GridPane;
@@ -39,7 +40,7 @@ public class Agregar {
         public String observaciones;
     }
 
-    public static record LineaPedido(Long idProducto, Integer cantidad) {
+    public static record Formulario(Long idProducto, Integer cantidad) {
 
     }
 
@@ -66,6 +67,7 @@ public class Agregar {
     private Dialog<PedidoNuevo> construirDialogoAgregar() {
         Dialog<PedidoNuevo> dialog = new Dialog<>();
         dialog.setTitle("Agregar pedido");
+        dialog.setResizable(true);
 
         ButtonType okType = new ButtonType("Agregar", ButtonBar.ButtonData.OK_DONE);
         dialog.getDialogPane().getButtonTypes().addAll(okType, ButtonType.CANCEL);
@@ -92,16 +94,37 @@ public class Agregar {
         GridPane grid = construirGridDialogo(cbCliente, contLineas, btnAgregarLinea, cbEstado, tfObs);
 
         // --- Validación del botón OK ---
+        // --- Validación del botón OK ---
+        // Tomar referencias de la fila inicial (la que viene por defecto)
+        HBox fila0 = (HBox) contLineas.getChildren().get(0);
+        @SuppressWarnings("unchecked")
+        ComboBox<ProductosService.ProductoItem> cbProd0
+                = (ComboBox<ProductosService.ProductoItem>) fila0.getChildren().get(0);
+        TextField tfCant0 = (TextField) fila0.getChildren().get(1);
+
         Node okBtn = dialog.getDialogPane().lookupButton(okType);
         okBtn.disableProperty().bind(
                 Bindings.createBooleanBinding(
-                        () -> dialogInvalido(cbCliente, contLineas),
+                        () -> BotonAgregarInhabilitado(cbCliente, contLineas),
+                        // Dependencias que ya tenías:
                         cbCliente.getEditor().textProperty(),
-                        contLineas.getChildren()
+                        contLineas.getChildren(),
+                        // 🔹 NUEVO: observar cambios internos de la fila inicial
+                        cbProd0.valueProperty(),
+                        tfCant0.textProperty()
                 )
         );
 
-        dialog.getDialogPane().setContent(grid);
+        ScrollPane sp = new ScrollPane(grid);
+        sp.setFitToWidth(true);
+        sp.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);      // sin scroll horizontal
+        sp.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);  // aparece scroll vertical si hace falta
+
+        dialog.getDialogPane().setContent(sp);
+
+// Opcional pero recomendado: permitir agrandar el diálogo
+        dialog.setResizable(true);
+        dialog.getDialogPane().setPrefSize(600, 500);
 
         // --- ResultConverter (mapea UI -> PedidoNuevo) ---
         dialog.setResultConverter(btn -> {
@@ -286,12 +309,12 @@ public class Agregar {
         });
 
         // Botón eliminar
-        Button btnDel = new Button("✕");
-        btnDel.getStyleClass().add("btn-danger");
+        Button btnDelete = new Button("✕");
+        btnDelete.getStyleClass().add("btn-danger");
 
-        HBox fila = new HBox(6, cbProd, tfCant, btnDel);
+        HBox fila = new HBox(6, cbProd, tfCant, btnDelete);
         fila.setAlignment(Pos.CENTER_LEFT);
-        btnDel.setOnAction(e -> contLineas.getChildren().remove(fila));
+        btnDelete.setOnAction(e -> contLineas.getChildren().remove(fila));
 
         return fila;
     }
@@ -442,39 +465,61 @@ public class Agregar {
         });
     }
 
-    private boolean dialogInvalido(ComboBox<String> cbCliente, VBox contLineas) {
-        String nombre = cbCliente.getEditor().getText();
-        boolean nombreVacio = (nombre == null || nombre.isBlank()) && cbCliente.getValue() == null;
-        if (nombreVacio) {
+    private boolean BotonAgregarInhabilitado(ComboBox<String> cbCliente, VBox contLineas) {
+        String nombre = cbCliente.getEditor().getText();/*Guarda en la variable nombre el texto que el
+                                                         usuario escribió en el ComboBox cbCliente */
+        boolean nombreVacio = (nombre == null || nombre.isBlank()) && cbCliente.getValue() == null;/*guarda en nombrevacio si el nombre no
+                                                                                                   tiene valor o si esta en blanco y tambien
+                                                                                                   si cbcliente carece de valor */
+        if (nombreVacio) {/*si nombre vacio es true retorna true, ya que este metodo es para verificar si es invalido */
+            return true;
+        }
+
+// 2) No hay filas → deshabilitado
+        if (contLineas.getChildren().isEmpty()) {
             return true;
         }
 
         // Debe haber al menos una línea válida
-        for (var n : contLineas.getChildren()) {
-            if (n instanceof HBox fila && esLineaValida(fila)) {
-                return false; // habilitar OK
-
+        for (var n : contLineas.getChildren()) {/*recorre todas las filas si encuentra un producto valido
+                                               con una cantidad valida almenos 1 ya lo toma como valido
+                                               y retorna false*/
+            if (n instanceof HBox fila && ValidarFichaPedido(fila)) {
+                return false;
+                /*  el false habilita el boton agregar pporque almenos encontro una ficha
+                               valida*/
             }
         }
-        return true; // deshabilitar OK
+        return true;
+        /* si retorna true es que no encontro ninguno y queda inhabilitado el boton agregar */
     }
 
-    private boolean esLineaValida(HBox fila) {
+    private boolean ValidarFichaPedido(HBox fila) {
         @SuppressWarnings("unchecked")
-        ComboBox<ProductosService.ProductoItem> cb
-                = (ComboBox<ProductosService.ProductoItem>) fila.getChildren().get(0);
-        TextField tf = (TextField) fila.getChildren().get(1);
+        ComboBox<ProductosService.ProductoItem> ComboProductos/*Esta es la variable que contiene todos los
+                                                              productos que el usuario puede elegir */
+                = (ComboBox<ProductosService.ProductoItem>) fila.getChildren().get(0);/*ComboProductos contiene el primer elemento
+                                                                                             del HBox, que es un ComboBox, y esa línea lo
+                                                                                            convierte (cast) al tipo ComboBox<ProductosService.ProductoItem>
+                                                                                            para poder usarlo como un ComboBox de productos */
+        TextField Cant = (TextField) fila.getChildren().get(1);/* se le asigna a cant el segundo
+                                                                     elemento que es la cantidad*/
 
-        if (cb.getValue() == null) {
+        if (ComboProductos.getValue() == null) {/*Revisa si no hay ningún producto seleccionado en el
+                                                ComboBox; si no hay nada elegido, devuelve false porque
+                                                la línea es inválida */
             return false;
         }
-        if (tf.getText() == null || tf.getText().isBlank()) {
+        if (Cant.getText() == null || Cant.getText().isBlank()) {/*revisa si el campo cantidad esta vacio
+                                                                 o en blanco y retorna false si esto es
+                                                                 asi*/
             return false;
         }
         try {
-            return Integer.parseInt(tf.getText()) >= 1;
+            return Integer.parseInt(Cant.getText()) >= 1;/*retorna true si la cantidad convertida en
+                                                         entero es mayor o igual a uno */
         } catch (NumberFormatException ignore) {
-            return false;
+            return false;/*si el usuario puso un valor que no es un numero */
         }
     }
 
@@ -496,7 +541,7 @@ public class Agregar {
         // Mapear las líneas
         for (var n : contLineas.getChildren()) {
             if (n instanceof HBox fila) {
-                aLineaPedido(fila).ifPresent(lp -> {
+                FichaPedido(fila).ifPresent(lp -> {
                     p.idProductos.add(lp.idProducto());
                     p.cantidades.add(lp.cantidad());
                 });
@@ -505,23 +550,32 @@ public class Agregar {
         return p;
     }
 
-    private Optional<LineaPedido> aLineaPedido(HBox fila) {
+    private Optional<Formulario> FichaPedido(HBox fila) {
         @SuppressWarnings("unchecked")
-        ComboBox<ProductosService.ProductoItem> cb
-                = (ComboBox<ProductosService.ProductoItem>) fila.getChildren().get(0);
-        TextField tf = (TextField) fila.getChildren().get(1);
+        ComboBox<ProductosService.ProductoItem> ComboProducto /*comboproducto es la lista entera de todos
+                                                               los productos disponibles para elegir */
+                = (ComboBox<ProductosService.ProductoItem>) fila.getChildren().get(0);/*Esa línea agarra el primer elemento del HBox
+                                                                                             (que es un ComboBox de productos) y lo convierte
+                                                                                             al tipo correcto para poder usarlo */
+        TextField Cant = (TextField) fila.getChildren().get(1);/*obtiene la cantidad que es el
+                                                                     segundo elemento de fila y es un
+                                                                     textfield, un texto visual */
 
-        var prod = cb.getValue();
-        if (prod == null) {
-            return Optional.empty();
+        var ProdElegido = ComboProducto.getValue();/*se le asigna el producto que eligio el usuario de
+                                                   toda la lista de productos de comboproducto*/
+        if (ProdElegido == null) {/*si el usuario no eligio ningun producto y por lo tanto queda null */
+            return Optional.empty();/*Devuelve un Optional vacío para indicar que
+                                      no se construye ninguna LineaPedido */
         }
-        try {
-            int c = Integer.parseInt(tf.getText());
-            if (c >= 1) {
-                return Optional.of(new LineaPedido(prod.id(), c));
-            }
-        } catch (NumberFormatException ignore) {
+        int CantElegida = Integer.parseInt(Cant.getText());/*convierte la cantidad que escribio el
+                                                               usuario de texto a un numero entero y lo
+                                                               guarda en CantElegida */
+        if (CantElegida >= 1) {/*si la cantidad elegida es mayor o igual a 1 */
+            return Optional.of(new Formulario(ProdElegido.id(), CantElegida));/*Devuelve un Optional
+                                                                                   con la línea de pedido
+                                                                                   construida */
         }
-        return Optional.empty();
+        return Optional.empty();/*sino devuelve un Optional vacío para indicar que no se construye ninguna
+                                LineaPedido */
     }
 }

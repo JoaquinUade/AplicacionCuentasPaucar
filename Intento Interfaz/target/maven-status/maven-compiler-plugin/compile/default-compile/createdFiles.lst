@@ -1,12 +1,6 @@
 paucar\service\ClientesService.class
-paucar\Ventas$1.class
-paucar\Ventas$Producto.class
-paucar\Aplicacion.class
-paucar\Ventas.class
-paucar\Ventas$PedidoNuevo.class
-paucar\service\VentasBackend$TipoDePago.class
-paucar\Ventas$Fila.class
 paucar\service\ProductosService.class
+paucar\Aplicacion.class
 paucar\service\VentasBackend.class
 paucar\service\VentasBackend$VentaFilaDto.class
 paucar\service\ProductosService$ProductoItem.class

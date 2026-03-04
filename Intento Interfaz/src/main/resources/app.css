@@ -103,3 +103,7 @@
     -fx-pref-width: 0;
     -fx-background-color: transparent;
 }
+
+.dialog-pane > *.content {
+    -fx-background-color: #f7f7f7 !important;
+}
