@@ -94,7 +94,6 @@ public class Agregar {
         GridPane grid = construirGridDialogo(cbCliente, contLineas, btnAgregarLinea, cbEstado, tfObs);
 
         // --- Validación del botón OK ---
-        // --- Validación del botón OK ---
         // Tomar referencias de la fila inicial (la que viene por defecto)
         HBox fila0 = (HBox) contLineas.getChildren().get(0);
         @SuppressWarnings("unchecked")
@@ -129,7 +128,7 @@ public class Agregar {
         // --- ResultConverter (mapea UI -> PedidoNuevo) ---
         dialog.setResultConverter(btn -> {
             if (btn == okType) {
-                return construirPedidoDesdeUI(cbCliente, cbEstado, tfObs, contLineas);
+                return ConstruirPedidoListoParaBackend(cbCliente, cbEstado, tfObs, contLineas);
             }
             return null;
         });
@@ -141,8 +140,9 @@ public class Agregar {
         ComboBox<String> cbCliente = new ComboBox<>(clientesFiltrados);/*Hacé una cajita para elegir clientes, 
                                                                    y llenala con los papelitos que están
                                                                    en la bolsa clientesFiltrados */
+                                                                   
         cbCliente.setEditable(true);/*permite escribir para filtrarclientes, por alguna razon si quito
-        //                            esto si se puede seleccionar un cliente */
+                                           esto si se puede seleccionar un cliente */
         cbCliente.setPromptText("Nombre (cliente/mesa/empresa)");
 
         AtomicBoolean actualizandoEditor = new AtomicBoolean(false);
@@ -167,9 +167,8 @@ public class Agregar {
                                                                                                          txt está vacío, muestra todo; si no, muestra solo los que
                                                                                                          contienen ese texto (ignorando mayúsculas/minúsculas) */
             if (!cbCliente.isShowing() && !txt.isEmpty()) {
-                cbCliente.show();/* Si el ComboBox NO está abierto
-                                                                       y el usuario escribió algo,
-                                                                       entonces abrilo */
+                cbCliente.show();/* Si el ComboBox NO está abierto y el usuario escribió algo, entonces
+                                 abrilo */
             }
         });
 
@@ -474,19 +473,15 @@ public class Agregar {
         if (nombreVacio) {/*si nombre vacio es true retorna true, ya que este metodo es para verificar si es invalido */
             return true;
         }
-
-// 2) No hay filas → deshabilitado
-        if (contLineas.getChildren().isEmpty()) {
+        if (contLineas.getChildren().isEmpty()) {/*No hay filas → deshabilitado */
             return true;
         }
 
-        // Debe haber al menos una línea válida
         for (var n : contLineas.getChildren()) {/*recorre todas las filas si encuentra un producto valido
                                                con una cantidad valida almenos 1 ya lo toma como valido
                                                y retorna false*/
             if (n instanceof HBox fila && ValidarFichaPedido(fila)) {
-                return false;
-                /*  el false habilita el boton agregar pporque almenos encontro una ficha
+                return false;/*el false habilita el boton agregar pporque almenos encontro una ficha
                                valida*/
             }
         }
@@ -523,31 +518,50 @@ public class Agregar {
         }
     }
 
-    private PedidoNuevo construirPedidoDesdeUI(ComboBox<String> cbCliente,
+    private PedidoNuevo ConstruirPedidoListoParaBackend(ComboBox<String> cbCliente,
             ComboBox<TipoDePago> cbEstado,
             TextField tfObs,
-            VBox contLineas) {
-        PedidoNuevo p = new PedidoNuevo();
+            VBox contLineas) {/*Lo que devuelve este método (PedidoNuevo p) es lo que después se manda al 
+                              backend para guardar en la base de datos y que aparezca en la tabla */
 
-        String nombre = cbCliente.getEditor().getText();
-        if (nombre == null || nombre.isBlank()) {
+        PedidoNuevo p = new PedidoNuevo();/*Creá un pedidonuevo vacío y guardalo en la variable p */
+
+        String nombre = cbCliente.getEditor().getText();/*Tomá el texto que el usuario escribió en el
+                                                         ComboBox de clientes y guardalo en la variable
+                                                         nombre */
+        if (nombre == null || nombre.isBlank()) {/*Si el usuario no escribió nada en el ComboBox, entonces
+                                                 usá el cliente que haya seleccionado de la lista */
             nombre = cbCliente.getValue();
         }
-        p.nombreCliente = (nombre == null ? "" : nombre.trim());
+        p.nombreCliente = (nombre == null ? "" : nombre.trim());/*Si nombre no existe (es null), guardo
+                                                                 una cadena vacía. Si existe, lo guardo
+                                                                 sin espacios sobrantes */
 
-        p.estado = cbEstado.getValue();
-        p.observaciones = tfObs.getText() == null ? "" : tfObs.getText().trim();
+        p.estado = cbEstado.getValue();/*Guardá en el pedido el tipo de pago que el usuario seleccionó */
+
+        p.observaciones = tfObs.getText() == null ? "" : tfObs.getText().trim();/*Si el usuario escribió
+                                                                               algo en observaciones,
+                                                                               guardalo sin espacios al
+                                                                               principio ni al final;
+                                                                               si no guardá una cadena
+                                                                               vacía */
 
         // Mapear las líneas
-        for (var n : contLineas.getChildren()) {
-            if (n instanceof HBox fila) {
-                FichaPedido(fila).ifPresent(lp -> {
-                    p.idProductos.add(lp.idProducto());
-                    p.cantidades.add(lp.cantidad());
+        for (var n : contLineas.getChildren()) {/*Recorre cada hijo del VBox contLineas: cada hijo es una
+                                                fila HBox con [producto, cantidad, eliminar]*/
+
+            if (n instanceof HBox fila) {/*Entonces la fila HBox que recorremos es una fila de productos, y
+                                          Si pongo 5 productos distintos, los reviso cada uno y pregunto
+                                          por cada uno si es un HBox */
+                FichaPedido(fila).ifPresent(LineaProd -> {/*Si la fila es válida, recibo la línea
+                                                          LineaProd (idProducto, cantidad) y agrego
+                                                          esos datos al pedido */
+                    p.idProductos.add(LineaProd.idProducto());
+                    p.cantidades.add(LineaProd.cantidad());
                 });
             }
         }
-        return p;
+        return p;/*Devuelve el pedido completo (p) con todos los datos que juntamos de la pantalla */
     }
 
     private Optional<Formulario> FichaPedido(HBox fila) {

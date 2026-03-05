@@ -211,12 +211,42 @@ public final class Ventas extends BorderPane {
         colNombre.setOnEditCommit(e -> e.getRowValue().setNombre(e.getNewValue()));
         colNombre.setPrefWidth(200);
 
-        // Columna: Descripción (solo muestra)
-        var colDesc = new TableColumn<Fila, String>("Descripción");
-        colDesc.setCellValueFactory(c -> c.getValue().descripcionProperty());
-        colDesc.setCellFactory(TextFieldTableCell.forTableColumn());
-        colDesc.setEditable(false);
-        colDesc.setPrefWidth(420);
+        // Columna: Descripción (mostrar TODO el texto con wrap)
+var colDesc = new TableColumn<Fila, String>("Descripción");
+colDesc.setCellValueFactory(c -> c.getValue().descripcionProperty());
+
+// NUEVO: celda con Text que envuelve (wrap) el contenido
+colDesc.setCellFactory(col -> new TableCell<Fila, String>() {
+    private final javafx.scene.text.Text text = new javafx.scene.text.Text();
+
+    {
+        // Envolver el texto según el ancho de la columna (restamos un margen)
+        text.wrappingWidthProperty().bind(col.widthProperty().subtract(16));
+        // Dejar que la celda calcule su alto según el contenido
+        setGraphic(text);
+        setPrefHeight(javafx.scene.layout.Region.USE_COMPUTED_SIZE);
+    }
+
+    @Override
+    protected void updateItem(String item, boolean empty) {
+        super.updateItem(item, empty);
+        if (empty || item == null) {
+            text.setText(null);
+            setTooltip(null);
+            setGraphic(null);
+        } else {
+            text.setText(item);
+            setGraphic(text);
+
+            // (Opcional) tooltip con el texto completo
+            var tip = new javafx.scene.control.Tooltip(item);
+            setTooltip(tip);
+        }
+    }
+});
+
+colDesc.setEditable(false);
+colDesc.setPrefWidth(420);
 
         // Columna: Monto (formateado)
         var colMonto = new TableColumn<Fila, String>("Monto");
