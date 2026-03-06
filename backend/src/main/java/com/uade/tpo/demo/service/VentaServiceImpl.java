@@ -11,8 +11,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.time.format.TextStyle;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Locale;
 import java.util.stream.Collectors;
 
 @Service
@@ -66,7 +68,9 @@ public class VentaServiceImpl implements VentaService {
         venta.setEstado(ventaRequest.getEstado());
         venta.setObservaciones(ventaRequest.getObservaciones());
         venta.setFecha(LocalDateTime.now());
-
+        venta.setDia(LocalDate.now().getDayOfWeek()
+                       .getDisplayName(TextStyle.FULL, 
+                       new Locale("es", "ES")));
         return ventaRepository.save(venta);
     }
 
@@ -153,84 +157,90 @@ public class VentaServiceImpl implements VentaService {
     }
 
     @Override
-    public List<VentaDTO> obtenerVentasOrdenadas(Integer mes, Integer anio) {
-        int yearFilter = anio != null ? anio : java.time.LocalDate.now().getYear();
-        
-        return ventaRepository.findAll()
-                .stream()
-                .filter(v -> {
-                    // Filtrar por año
-                    if (v.getFecha().getYear() != yearFilter) {
-                        return false;
-                    }
-                    // Filtrar por mes si se proporciona
-                    if (mes != null && v.getFecha().getMonthValue() != mes) {
-                        return false;
-                    }
-                    return true;
-                })
-                .map(v -> new VentaDTO(
-                        v.getFecha(),
-                        v.getCliente().getNombre(),
-                        v.getDescripcion(),
-                        v.getMonto()
-                ))
-                .sorted((v1, v2) -> {
-                    int comparaNombre = v1.getNombreCliente().compareTo(v2.getNombreCliente());
-                    if (comparaNombre != 0) {
-                        return comparaNombre;
-                    }
-                    return v1.getFecha().compareTo(v2.getFecha());
-                })
-                .collect(Collectors.toList());
-    }
+public List<VentaDTO> obtenerVentasOrdenadas(Integer mes, Integer anio) {
+    int yearFilter = anio != null ? anio : java.time.LocalDate.now().getYear();
+    
+    return ventaRepository.findAll()
+            .stream()
+            .filter(v -> {
+                // Filtrar por año
+                if (v.getFecha().getYear() != yearFilter) {
+                    return false;
+                }
+                // Filtrar por mes si se proporciona
+                if (mes != null && v.getFecha().getMonthValue() != mes) {
+                    return false;
+                }
+                return true;
+            })
+            .map(v -> new VentaDTO(
+                    v.getFecha(),
+                    v.getDia(),  // ← Usamos el día de la BD
+                    v.getCliente().getNombre(),
+                    v.getDescripcion(),
+                    v.getMonto()
+            ))
+            .sorted((v1, v2) -> {
+                int comparaNombre = v1.getNombreCliente().compareTo(v2.getNombreCliente());
+                if (comparaNombre != 0) {
+                    return comparaNombre;
+                }
+                return v1.getFecha().compareTo(v2.getFecha());
+            })
+            .collect(Collectors.toList());
+}
 
     @Override
-    public List<VentaResumenDiarioDTO> obtenerResumenDiarioPorTipoPago(Integer mes, Integer anio) {
-        int yearFilter = anio != null ? anio : java.time.LocalDate.now().getYear();
-        int mesFilter = mes != null ? mes : java.time.LocalDate.now().getMonthValue();
+public List<VentaResumenDiarioDTO> obtenerResumenDiarioPorTipoPago(Integer mes, Integer anio) {
+    int yearFilter = anio != null ? anio : java.time.LocalDate.now().getYear();
+    int mesFilter = mes != null ? mes : java.time.LocalDate.now().getMonthValue();
 
-        return ventaRepository.findAll()
-                .stream()
-                .filter(v -> v.getFecha().getYear() == yearFilter && v.getFecha().getMonthValue() == mesFilter)
-                .collect(Collectors.groupingBy(v -> v.getFecha().toLocalDate()))
-                .entrySet()
-                .stream()
-                .map(entry -> {
-                    LocalDate fecha = entry.getKey();
-                    List<Venta> ventasDelDia = entry.getValue();
+    return ventaRepository.findAll()
+            .stream()
+            .filter(v -> v.getFecha().getYear() == yearFilter && 
+                        v.getFecha().getMonthValue() == mesFilter)
+            .collect(Collectors.groupingBy(v -> v.getFecha().toLocalDate()))
+            .entrySet()
+            .stream()
+            .map(entry -> {
+                LocalDate fecha = entry.getKey();
+                List<Venta> ventasDelDia = entry.getValue();
 
-                    VentaResumenDiarioDTO resumen = new VentaResumenDiarioDTO(fecha);
+                // ✅ USAMOS EL DÍA DE LA BASE DE DATOS
+                String dia = ventasDelDia.get(0).getDia(); // Todas tienen el mismo día
+                
+                VentaResumenDiarioDTO resumen = new VentaResumenDiarioDTO(fecha);
+                resumen.setDia(dia); // Asignamos el día desde la BD
 
-                    for (Venta venta : ventasDelDia) {
-                        Double monto = venta.getMonto();
-                        resumen.setVentaTotal(resumen.getVentaTotal() + monto);
+                for (Venta venta : ventasDelDia) {
+                    Double monto = venta.getMonto();
+                    resumen.setVentaTotal(resumen.getVentaTotal() + monto);
 
-                        switch (venta.getEstado()) {
-                            case TRANSFERENCIA:
-                                resumen.setTransferencia(resumen.getTransferencia() + monto);
-                                break;
-                            case DEBE:
-                                resumen.setDebe(resumen.getDebe() + monto);
-                                break;
-                            case EFECTIVO:
-                                resumen.setEfectivo(resumen.getEfectivo() + monto);
-                                break;
-                            case MERCADO_PAGO:
-                                resumen.setMercadoPago(resumen.getMercadoPago() + monto);
-                                break;
-                            case DEBITO:
-                                resumen.setDebito(resumen.getDebito() + monto);
-                                break;
-                            case CREDITO:
-                                resumen.setCredito(resumen.getCredito() + monto);
-                                break;
-                        }
+                    switch (venta.getEstado()) {
+                        case TRANSFERENCIA:
+                            resumen.setTransferencia(resumen.getTransferencia() + monto);
+                            break;
+                        case DEBE:
+                            resumen.setDebe(resumen.getDebe() + monto);
+                            break;
+                        case EFECTIVO:
+                            resumen.setEfectivo(resumen.getEfectivo() + monto);
+                            break;
+                        case MERCADO_PAGO:
+                            resumen.setMercadoPago(resumen.getMercadoPago() + monto);
+                            break;
+                        case DEBITO:
+                            resumen.setDebito(resumen.getDebito() + monto);
+                            break;
+                        case CREDITO:
+                            resumen.setCredito(resumen.getCredito() + monto);
+                            break;
                     }
+                }
 
-                    return resumen;
-                })
-                .sorted((r1, r2) -> r1.getFecha().compareTo(r2.getFecha()))
-                .collect(Collectors.toList());
-    }
+                return resumen;
+            })
+            .sorted((r1, r2) -> r1.getFecha().compareTo(r2.getFecha()))
+            .collect(Collectors.toList());
+}
 }

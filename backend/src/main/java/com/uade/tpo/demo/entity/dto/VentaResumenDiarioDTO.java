@@ -4,6 +4,7 @@ import java.time.LocalDate;
 
 public class VentaResumenDiarioDTO {
     private LocalDate fecha;
+    private String dia;  // Campo nuevo
     private Double ventaTotal;
     private Double transferencia;
     private Double debe;
@@ -12,6 +13,7 @@ public class VentaResumenDiarioDTO {
     private Double debito;
     private Double credito;
 
+    // Constructores existentes...
     public VentaResumenDiarioDTO() {
         this.ventaTotal = 0.0;
         this.transferencia = 0.0;
@@ -33,12 +35,23 @@ public class VentaResumenDiarioDTO {
         this.credito = 0.0;
     }
 
+    // GETTERS Y SETTERS PARA TODOS LOS CAMPOS (incluyendo dia)
+    
     public LocalDate getFecha() {
         return fecha;
     }
 
     public void setFecha(LocalDate fecha) {
         this.fecha = fecha;
+    }
+
+    // ✅ NUEVO: Getter y Setter para dia
+    public String getDia() {
+        return dia;
+    }
+
+    public void setDia(String dia) {
+        this.dia = dia;
     }
 
     public Double getVentaTotal() {

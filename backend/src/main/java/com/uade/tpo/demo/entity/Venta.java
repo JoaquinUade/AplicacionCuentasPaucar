@@ -2,6 +2,8 @@ package com.uade.tpo.demo.entity;
 
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
+import java.time.format.TextStyle;
+import java.util.Locale;
 
 @Entity
 @Table(name = "ventas")
@@ -14,6 +16,9 @@ public class Venta {
 
     @Column(name = "fecha", nullable = false)
     private LocalDateTime fecha;
+
+    @Column(name = "dia", nullable = false)
+    private String dia;
 
     @ManyToOne
     @JoinColumn(name = "id_cliente", nullable = false)
@@ -42,6 +47,9 @@ public class Venta {
         this.estado = estado;
         this.observaciones = observaciones;
         this.fecha = fecha;
+        this.dia = fecha.getDayOfWeek()
+                       .getDisplayName(TextStyle.FULL, 
+                       new Locale("es", "ES"));
     }
 
     public Long getIdVenta() {
@@ -99,4 +107,11 @@ public class Venta {
     public void setFecha(LocalDateTime fecha) {
         this.fecha = fecha;
     }
+        public String getDia() {
+            return dia;
+        }
+
+        public void setDia(String dia) {
+            this.dia = dia;
+        }
 }

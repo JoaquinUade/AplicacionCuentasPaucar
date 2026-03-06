@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS clientes (
 CREATE TABLE IF NOT EXISTS ventas (
   id_venta BIGINT NOT NULL AUTO_INCREMENT,
   fecha DATETIME NOT NULL,
+  dia VARCHAR(20) NOT NULL,  -- dia en string
   id_cliente BIGINT NOT NULL,
   descripcion VARCHAR(255) NOT NULL,
   estado VARCHAR(50) NOT NULL,
