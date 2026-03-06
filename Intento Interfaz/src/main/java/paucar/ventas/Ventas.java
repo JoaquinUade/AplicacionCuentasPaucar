@@ -10,6 +10,7 @@ import java.util.concurrent.CompletableFuture;
 
 import com.uade.tpo.demo.entity.TipoCliente;
 import com.uade.tpo.demo.entity.TipoDePago;
+import com.uade.tpo.demo.entity.dto.VentaRequest;
 
 import javafx.application.Platform;
 import javafx.beans.binding.Bindings;
@@ -45,10 +46,11 @@ public final class Ventas extends BorderPane {
     private static final String API_BASE = "http://localhost:4002/api";
     private final NumberFormat MONEDA = NumberFormat.getCurrencyInstance(LOCALE_AR);
 
+    private final VentaRequest venta = new VentaRequest();
     // ====== Servicios / backend ======
-    private final ProductosService productosService = new ProductosService(API_BASE);
-    private final ClientesService clientesService = new ClientesService(API_BASE);
-    private final VentasBackend backend = new VentasBackend(API_BASE, clientesService);
+    private final ProductosService productosService = new ProductosService(API_BASE, venta);
+    private final ClientesService clientesService = new ClientesService(API_BASE, venta);
+    private final VentasBackend backend = new VentasBackend(API_BASE, clientesService, venta);
 
     // ====== Modelo de Fila (UI de la tabla) ======
     public static class Fila {
@@ -75,6 +77,9 @@ public final class Ventas extends BorderPane {
                                                                                y creo mi variable estado La inicializo con
                                                                                el valor DEBE (o sea, que por defecto la
                                                                                forma de pago empieza siendo ‘debe’)*/
+
+        private final StringProperty observaciones = new SimpleStringProperty("");
+
         public String getNombre() {
             return nombre.get();
         }/*retorna el valor que está guardado en el StringProperty nombre*/
@@ -122,6 +127,18 @@ public final class Ventas extends BorderPane {
         public ObjectProperty<TipoDePago> estadoProperty() {
             return estado;
         }/*retorna el object property del estado porque la UI la requiere */
+
+        public String getObservaciones() {
+            return observaciones.get();
+        }
+
+        public void setObservaciones(String v) {
+            observaciones.set(v);
+        }
+
+        public StringProperty observacionesProperty() {
+            return observaciones;
+        }
     }
 
     // ====== Estado de la vista ======
@@ -141,6 +158,8 @@ public final class Ventas extends BorderPane {
     // ====== Constructor ======
     public Ventas() {
         setPadding(new Insets(16));
+        venta.setEstado(TipoDePago.DEBE);
+        venta.setObservaciones("");
         initUI();
         initAsync();
         initBindings();
@@ -211,42 +230,42 @@ public final class Ventas extends BorderPane {
         colNombre.setOnEditCommit(e -> e.getRowValue().setNombre(e.getNewValue()));
         colNombre.setPrefWidth(200);
 
-        // Columna: Descripción (mostrar TODO el texto con wrap)
-var colDesc = new TableColumn<Fila, String>("Descripción");
-colDesc.setCellValueFactory(c -> c.getValue().descripcionProperty());
+        // Columna: Descripción (mostrar todo el texto con wrap)
+        var colDesc = new TableColumn<Fila, String>("Descripción");
+        colDesc.setCellValueFactory(c -> c.getValue().descripcionProperty());
 
-// NUEVO: celda con Text que envuelve (wrap) el contenido
-colDesc.setCellFactory(col -> new TableCell<Fila, String>() {
-    private final javafx.scene.text.Text text = new javafx.scene.text.Text();
+        // NUEVO: celda con Text que envuelve (wrap) el contenido
+        colDesc.setCellFactory(col -> new TableCell<Fila, String>() {
+            private final javafx.scene.text.Text text = new javafx.scene.text.Text();
 
-    {
-        // Envolver el texto según el ancho de la columna (restamos un margen)
-        text.wrappingWidthProperty().bind(col.widthProperty().subtract(16));
-        // Dejar que la celda calcule su alto según el contenido
-        setGraphic(text);
-        setPrefHeight(javafx.scene.layout.Region.USE_COMPUTED_SIZE);
-    }
+            {
+                // Envolver el texto según el ancho de la columna (restamos un margen)
+                text.wrappingWidthProperty().bind(col.widthProperty().subtract(16));
+                // Dejar que la celda calcule su alto según el contenido
+                setGraphic(text);
+                setPrefHeight(javafx.scene.layout.Region.USE_COMPUTED_SIZE);
+            }
 
-    @Override
-    protected void updateItem(String item, boolean empty) {
-        super.updateItem(item, empty);
-        if (empty || item == null) {
-            text.setText(null);
-            setTooltip(null);
-            setGraphic(null);
-        } else {
-            text.setText(item);
-            setGraphic(text);
+            @Override
+            protected void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    text.setText(null);
+                    setTooltip(null);
+                    setGraphic(null);
+                } else {
+                    text.setText(item);
+                    setGraphic(text);
 
-            // (Opcional) tooltip con el texto completo
-            var tip = new javafx.scene.control.Tooltip(item);
-            setTooltip(tip);
-        }
-    }
-});
+                    // (Opcional) tooltip con el texto completo
+                    var tip = new javafx.scene.control.Tooltip(item);
+                    setTooltip(tip);
+                }
+            }
+        });
 
-colDesc.setEditable(false);
-colDesc.setPrefWidth(420);
+        colDesc.setEditable(false);
+        colDesc.setPrefWidth(420);
 
         // Columna: Monto (formateado)
         var colMonto = new TableColumn<Fila, String>("Monto");
@@ -282,6 +301,34 @@ colDesc.setPrefWidth(420);
         });
         colEstado.setPrefWidth(180);
 
+// ⟵ NUEVO: Columna "Observaciones" (wrap + tooltip)
+        var colObs = new TableColumn<Fila, String>("Observaciones");
+        colObs.setCellValueFactory(c -> c.getValue().observacionesProperty());
+        colObs.setCellFactory(col -> new TableCell<Fila, String>() {
+            private final javafx.scene.text.Text text = new javafx.scene.text.Text();
+
+            {
+                text.wrappingWidthProperty().bind(col.widthProperty().subtract(16));
+                setGraphic(text);
+                setPrefHeight(javafx.scene.layout.Region.USE_COMPUTED_SIZE);
+            }
+
+            @Override
+            protected void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null || item.isBlank()) {
+                    text.setText(null);
+                    setTooltip(null);
+                    setGraphic(null);
+                } else {
+                    text.setText(item);
+                    setGraphic(text);
+                    setTooltip(new javafx.scene.control.Tooltip(item));
+                }
+            }
+        });
+        colObs.setPrefWidth(179); // ajustalo al gusto
+
         // Botón quitar
         btnQuitar.getStyleClass().add("btn-danger");
         btnQuitar.disableProperty().bind(Bindings.isNull(tabla.getSelectionModel().selectedItemProperty()));
@@ -293,7 +340,7 @@ colDesc.setPrefWidth(420);
             recomputeTotal();
         });
 
-        tabla.getColumns().setAll(java.util.List.of(colNombre, colDesc, colMonto, colEstado));
+        tabla.getColumns().setAll(java.util.List.of(colNombre, colDesc, colMonto, colEstado, colObs));
 
         var cont = new VBox(8, tabla, btnQuitar);
         VBox.setVgrow(tabla, Priority.ALWAYS);
@@ -351,14 +398,17 @@ colDesc.setPrefWidth(420);
                 .supplyAsync(() -> backend.cargarVentasDelDia(LocalDate.now()))
                 .thenAccept(lista -> Platform.runLater(() -> {
             var nuevas = FXCollections.<Fila>observableArrayList();
-            for (VentasBackend.VentaFilaDto dto : lista) {
+            for (java.util.Map<String, Object> dto : lista) {
                 Fila f = new Fila();
-                f.setNombre(dto.nombre());
-                f.setDescripcion(dto.descripcion());
-                f.setMonto(dto.monto());
-                f.setEstado(dto.estado());
+                f.setNombre((String) dto.getOrDefault("nombre", ""));
+                f.setDescripcion((String) dto.getOrDefault("descripcion", ""));
+                f.setMonto((java.math.BigDecimal) dto.getOrDefault("monto", java.math.BigDecimal.ZERO));
+                f.setEstado((com.uade.tpo.demo.entity.TipoDePago) dto.getOrDefault(
+                        "estado", com.uade.tpo.demo.entity.TipoDePago.DEBE));
+                f.setObservaciones((String) dto.getOrDefault("observaciones", ""));
                 nuevas.add(f);
             }
+
             filas.setAll(nuevas);
             recomputeTotal();
         }));
@@ -409,6 +459,11 @@ colDesc.setPrefWidth(420);
     private void confirmarPedidoAsync(Agregar.PedidoNuevo p) {
         TipoCliente tipo = deducirTipoCliente(p.nombreCliente);
 
+        venta.setIdProductos(p.idProductos);
+        venta.setCantidades(p.cantidades);
+        venta.setEstado(p.estado);
+        venta.setObservaciones(p.observaciones);
+
         if (tipo == TipoCliente.MESA) {
             CompletableFuture
                     .supplyAsync(() -> backend.GuardarPedidoMesas(
@@ -422,32 +477,38 @@ colDesc.setPrefWidth(420);
             return;
         }
 
-        CompletableFuture
-                .runAsync(() -> clientesService.crearClienteSiNoExiste(p.nombreCliente, tipo))
-                .thenCompose(v -> CompletableFuture.supplyAsync(() -> clientesService.obtenerClienteIdPorNombre(p.nombreCliente)))
-                .thenCompose(idCliente -> {
-                    if (idCliente == null) {
-                        Platform.runLater(() -> {
-                            var dlg = new javafx.scene.control.Alert(javafx.scene.control.Alert.AlertType.WARNING);
-                            dlg.setTitle("Cliente no encontrado");
-                            dlg.setHeaderText("No se pudo obtener el ID del cliente");
-                            dlg.setContentText("Verificá el nombre del cliente o volvé a intentar.");
-                            dlg.showAndWait();
-                        });
-                        return CompletableFuture.completedFuture(false);
-                    }
-                    return CompletableFuture.supplyAsync(() -> backend.GuardarPedidos(
-                            idCliente, p.idProductos, p.cantidades, p.estado, p.observaciones));
-                })
-                .thenAccept(ok -> Platform.runLater(() -> {
-            if (ok) {
-                if (!clientes.contains(p.nombreCliente)) {
-                    clientes.add(p.nombreCliente);
-                    FXCollections.sort(clientes, String.CASE_INSENSITIVE_ORDER);
+// 4) Si NO es MESA: crear/buscar cliente y guardar
+    CompletableFuture
+            .runAsync(() -> clientesService.crearClienteSiNoExiste(p.nombreCliente, tipo))
+            .thenCompose(v -> CompletableFuture.supplyAsync(() -> clientesService.obtenerClienteIdPorNombre(p.nombreCliente)))
+            .thenCompose(idCliente -> {
+                if (idCliente == null) {
+                    Platform.runLater(() -> {
+                        var dlg = new javafx.scene.control.Alert(javafx.scene.control.Alert.AlertType.WARNING);
+                        dlg.setTitle("Cliente no encontrado");
+                        dlg.setHeaderText("No se pudo obtener el ID del cliente");
+                        dlg.setContentText("Verificá el nombre del cliente o volvé a intentar.");
+                        dlg.showAndWait();
+                    });
+                    return CompletableFuture.completedFuture(false);
                 }
-                recargarDelBackend();
-            }
-        }));
+
+                // (Opcional) redundante: ClientesService ya lo setea; igual lo dejamos por claridad:
+                venta.setIdCliente(idCliente);
+
+                // Guardás como antes (si aún no querés postear el DTO completo)
+                return CompletableFuture.supplyAsync(() -> backend.GuardarPedidos(
+                        idCliente, p.idProductos, p.cantidades, p.estado, p.observaciones));
+            })
+            .thenAccept(ok -> Platform.runLater(() -> {
+                if (ok) {
+                    if (!clientes.contains(p.nombreCliente)) {
+                        clientes.add(p.nombreCliente);
+                        FXCollections.sort(clientes, String.CASE_INSENSITIVE_ORDER);
+                    }
+                    recargarDelBackend();
+                }
+            }));
     }
 
     // =========================================================================================

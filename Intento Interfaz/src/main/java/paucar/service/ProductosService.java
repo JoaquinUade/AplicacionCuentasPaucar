@@ -10,12 +10,14 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.uade.tpo.demo.entity.dto.VentaRequest;
 
 public class ProductosService {
-    
-private final String BASE_URL;
+
+    private final String BASE_URL;
     private final HttpClient http;
     private final ObjectMapper TraductorJSON;
+    private final VentaRequest venta;
 
     // --- DTOs internos ---
     public record ProductoItem(Long id, String nombre) {/*Un record (Java 16+) es una forma corta de declarar
@@ -25,12 +27,22 @@ private final String BASE_URL;
                                                        repetitivo del constructor, getters, equals/hashCode, 
                                                        toString.*/
     }
- public ProductosService(String BASE_URL) {
+
+    public ProductosService(String BASE_URL, VentaRequest venta) {
         this.BASE_URL = Objects.requireNonNull(BASE_URL);
         this.http = HttpClient.newHttpClient();
         this.TraductorJSON = new ObjectMapper();
+        this.venta = Objects.requireNonNull(venta, "venta (VentaRequest) no puede ser null");
+
+        if (this.venta.getIdProductos() == null) {
+            this.venta.setIdProductos(new ArrayList<>());
+        }
+        if (this.venta.getCantidades() == null) {
+            this.venta.setCantidades(new ArrayList<>());
+        }
     }
-public List<ProductoItem> cargarProductos() {/*este metodo hace que aparezcan los productos para añadir,
+
+    public List<ProductoItem> cargarProductos() {/*este metodo hace que aparezcan los productos para añadir,
                                                  si quitas el if desaparecen todos los productos */
         try {
             var solicitud = HttpRequest.newBuilder()
@@ -44,25 +56,28 @@ public List<ProductoItem> cargarProductos() {/*este metodo hace que aparezcan lo
             if (response.statusCode() >= 200 && response.statusCode() < 300) {/*si el codigo de la response esta
                                                                               entre 200 y 299*/
 
-                var array = TraductorJSON.readTree(response.body());/*/ convierte el texto JSON en un objeto
-                                                                      JsonNode puede contener 1 o muchos productos*/
-                var out = new ArrayList<ProductoItem>();/*lista Java donde guardaremos los productos */
+
+                var array = TraductorJSON.readTree(response.body());
+                var out = new ArrayList<ProductoItem>();
+
+                // *** USO de VentaRequest (sin estructuras nuevas) ***
+                List<Long> idsSeleccionados = venta.getIdProductos();
 
                 if (array.isArray()) {/*verifica que la variable array es un vector/lista */
                     for (var n : array) {/*recorre con n el vector array de productos */
-                        Long id
-                                = n.hasNonNull("idProducto") ? n.get("idProducto").asLong()/*/ si existe "idProducto" y no es null, usa ese valor sino deja id como null */
+
+                        Long id = n.hasNonNull("idProducto")
+                                ? n.get("idProducto").asLong()
+                                : null;
+                        String nombre = n.hasNonNull("nombre")
+                                ? n.get("nombre").asText()
                                 : null;
 
-                        String nombre = n.hasNonNull("nombre") ? n.get("nombre").asText() /*Si el JSON n tiene la clave "nombre" y no es null, entonces guardá su valor
-                                                                                                                como texto en la variable nombre; si no, poné null */
-                                : null;
-
-                        if (id != null && nombre != null && !nombre.isBlank()) {/*si tiene id y nombre valido,
-                                                                                se crea un ProductoItem sin
-                                                                                antes quitarle los espacios
-                                                                                del principio y final
-                                                                                con trim()*/
+                        if (id != null && nombre != null && !nombre.isBlank()) {
+                            // Excluir productos ya presentes en la venta
+                            if (idsSeleccionados.contains(id)) {
+                                continue;
+                            }
                             out.add(new ProductoItem(id, nombre.trim()));
                         }
                     }

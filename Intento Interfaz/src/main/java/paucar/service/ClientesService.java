@@ -11,20 +11,29 @@ import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.uade.tpo.demo.entity.TipoCliente;
+import com.uade.tpo.demo.entity.dto.VentaRequest;
 
 public class ClientesService {
 
     private final String BASE_URL;
     private final HttpClient http;
     private final ObjectMapper TraductorJSON;
+    private final VentaRequest venta;
 
-    public ClientesService(String BASE_URL) {
+    public ClientesService(String BASE_URL, VentaRequest venta) {
         this.BASE_URL = Objects.requireNonNull(BASE_URL);
         this.http = HttpClient.newHttpClient();
         this.TraductorJSON = new ObjectMapper();
+        this.venta = Objects.requireNonNull(venta, "venta (VentaRequest) no puede ser null");
+
+        if (this.venta.getIdProductos() == null) {
+            this.venta.setIdProductos(new ArrayList<>());
+        }
+        if (this.venta.getCantidades() == null) {
+            this.venta.setCantidades(new ArrayList<>());
+        }
     }
 
     public List<String> obtenerTodosLosClientesMenosMesas() {/*Método que devuelve una lista de nombres que NO
@@ -114,6 +123,16 @@ public class ClientesService {
                     || response.statusCode() == 400 || response.statusCode() == 409)) {/*Si NO es 200, NI 201, NI 400, NI 409 entonces tira error */
                 System.err.println("Error al crear cliente: HTTP " + response.statusCode());
             }
+
+            try {
+                Long id = this.obtenerClienteIdPorNombre(nombre);
+                if (id != null && this.venta != null) {
+                    this.venta.setIdCliente(id);
+                }
+            } catch (Exception ignore) {
+                // defensivo
+            }
+
         } catch (java.io.IOException | InterruptedException e) {
             System.err.println("crearClienteSiNoExiste: " + e.getMessage());
         }
@@ -135,16 +154,15 @@ public class ClientesService {
                 var json = TraductorJSON.readTree(response.body());/*Convierte el texto que vino del servidor en
                                                                    la respuesta (response.body()) a un objeto
                                                                    JSON (JsonNode) usando Jackson */
-                JsonNode name = null;/*Está declarando una variable llamada name de tipo JsonNode, y le está
-                                  asignando el valor null porque todavía no sabe qué JSON va a guardar ahí */
+                com.fasterxml.jackson.databind.JsonNode name = null;
 
                 if (json.isArray()) {
-                    String buscado = (nombre == null ? "" : nombre.trim());
-                    for (JsonNode elem : json) {
+                    String buscado = nombre.trim();
+                    for (com.fasterxml.jackson.databind.JsonNode elem : json) {
                         if (elem != null && elem.hasNonNull("nombre")) {
                             String n = elem.get("nombre").asText("").trim();
                             if (n.equalsIgnoreCase(buscado)) {
-                                name = elem; // usamos el match exacto
+                                name = elem;
                                 break;
                             }
                         }
@@ -153,19 +171,25 @@ public class ClientesService {
                     name = json;
                 }
 
-// Si no hubo match exacto en el array, devolvé null para no asociar mal
                 if (name == null) {
                     return null;
                 }
-
-                if (name != null) {/*si el nombre no es nulo */
-                    if (name.hasNonNull("idCliente")) {/*revisa que tenga id y que este no sea nulo */
-                        return name.get("idCliente").asLong();/*retorna el id */
+                if (name.hasNonNull("idCliente")) {
+                    Long id = name.get("idCliente").asLong();
+                    // >>> INTEGRACIÓN VentaRequest <<<
+                    try {
+                        if (this.venta != null) {
+                            this.venta.setIdCliente(id); // usar VentaRequest
+                        }
+                    } catch (Exception ignore) {
+                        // defensivo: nunca romper el flujo original
                     }
+                    return id;
                 }
             }
         } catch (java.io.IOException | InterruptedException e) {
-            System.err.println("obtenerClienteIdPorNombre: " + e.getMessage());
+            System.err.println("obtenerClienteIdPorNombre (general): " + e.getMessage());
+            return null;
         }
         return null;
     }

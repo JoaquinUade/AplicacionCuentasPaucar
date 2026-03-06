@@ -15,6 +15,7 @@ import java.util.Objects;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.uade.tpo.demo.entity.TipoCliente;
 import com.uade.tpo.demo.entity.TipoDePago;
+import com.uade.tpo.demo.entity.dto.VentaRequest;
 
 public class VentasBackend {
 
@@ -28,14 +29,10 @@ public class VentasBackend {
                                   datos JSON en objetos Java y viceversa*/
 
     private final ClientesService clientesService;
-
-    public record VentaFilaDto(String nombre, String descripcion, BigDecimal monto, TipoDePago estado,
-            Long idCliente, TipoCliente tipoCliente) {
-
-    }
+    private final VentaRequest venta;
 
     // --- Constructor ---
-    public VentasBackend(String BASE_URL, ClientesService clientesService) {/*Recibe un parámetro llamado BASE_URL (un String) que debería ser
+    public VentasBackend(String BASE_URL, ClientesService clientesService,VentaRequest venta) {/*Recibe un parámetro llamado BASE_URL (un String) que debería ser
                                             la URL base del backend */
 
         this.BASE_URL = Objects.requireNonNull(BASE_URL);/*si el parámetro es null, lanza un NullPointerException
@@ -51,6 +48,17 @@ public class VentasBackend {
 
         this.clientesService = Objects.requireNonNull(clientesService);/*valida que el servicio de clientes no sea
                                                                        null, sino lanza una excepción inmediatamente */
+
+        this.venta = Objects.requireNonNull(venta, "venta (VentaRequest) no puede ser null");
+
+        // defensivo: asegurar listas no nulas
+        if (this.venta.getIdProductos() == null) {
+            this.venta.setIdProductos(new ArrayList<>());
+        }
+        if (this.venta.getCantidades() == null) {
+            this.venta.setCantidades(new ArrayList<>());
+        }
+
     }
 
     // ============================================================
@@ -70,54 +78,53 @@ public class VentasBackend {
             // return false;
             // }
 
-            var FichaPedido = TraductorJSON.createObjectNode()/*Creás un objeto JSON vacío */
-                    .put("idCliente", idCliente)/*añadimos como variable a rellenar idCliente*/
-                    .put("estado", estado == null ? "DEBE" : estado.name())/*añadimos estado con un valor predeterminado si no se le asigna valor */
-                    .put("observaciones", observaciones == null ? "" : observaciones);/*añade el campo observaciones, que si no tiene contenido, lo deja vacio */
+            var estadoEfectivo = (estado == null ? TipoDePago.DEBE : estado);
+            var obsSeguras = (observaciones == null ? "" : observaciones);
 
-            var ListaIds = FichaPedido.putArray("idProductos");/*osea que añade otro campo mas a
-                                                                          fichapedido, pero que a diferencia de
-                                                                          el otro que lo rellena el usuario, se
-                                                                          va a rellenar con la data que tienen los
-                                                                          productos en una lista, ya que si se
-                                                                          piden mas de un producto, recibiria
-                                                                          mas de un id*/
-            idProductos.forEach(ListaIds::add);
+            // *** USAR el VentaRequest inyectado ***
+            venta.setIdCliente(idCliente);
+            venta.setEstado(estadoEfectivo);
+            venta.setObservaciones(obsSeguras);
 
-            var ListaCantidades = FichaPedido.putArray("cantidades");/*En el JSON FichaPedido,
-                                                                                   agregá un NUEVO CAMPO llamado
-                                                                                   cantidades, cuyo valor será
-                                                                                   un array vacío  al cual hay
-                                                                                   que rellenar con el contenido
-                                                                                   de el vector cantidades*/
-            cantidades.forEach(ListaCantidades::add);
+            // reemplazar contenidos manteniendo alineación
+            venta.getIdProductos().clear();
+            venta.getCantidades().clear();
+            if (idProductos != null && cantidades != null) {
+                int n = Math.min(idProductos.size(), cantidades.size());
+                for (int i = 0; i < n; i++) {
+                    Long idP = idProductos.get(i);
+                    Integer cant = cantidades.get(i);
+                    if (idP != null && cant != null && cant > 0) {
+                        venta.getIdProductos().add(idP);
+                        venta.getCantidades().add(cant);
+                    }
+                }
+            }
 
-            var solicitud = HttpRequest.newBuilder()/*Voy a construir una solicitud HTTP nueva */
+            // Serializar el MISMO VentaRequest compartido
+            String body = TraductorJSON.writeValueAsString(venta);
+
+            var solicitud = HttpRequest.newBuilder()
                     .uri(URI.create(BASE_URL + "/ventas"))
-                    .header("Content-Type", "application/json")/*aclaro que el cuerpo que voy a
-                                                                           enviar está en formato JSON */
-                    .POST(HttpRequest.BodyPublishers.ofString(FichaPedido.toString()))/*la funcion de esta
-                                                                                      solicitud es esta
-                                                                                      precisamente, postear el
-                                                                                      pedido que ya hicimos en
-                                                                                      fichapedido */
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(body))
                     .build();
 
-            var response = http.send(solicitud, HttpResponse.BodyHandlers.ofString());/*se manda la solicitud 
-                                                                                      y cuando el servidor
-                                                                                      responda converti su
-                                                                                      respuesta en un string */
-            return response.statusCode() >= 200 && response.statusCode() < 300;/*retorna el codigo que entregue
-                                                                              el response si el codigo esta entre
-                                                                              200 y 299 */
+            HttpResponse<String> response = http.send(solicitud, HttpResponse.BodyHandlers.ofString());
+            return response.statusCode() >= 200 && response.statusCode() < 300;
 
-        } catch (java.io.IOException | InterruptedException e) {
-            System.err.println("guardarVentaCliente: " + e.getMessage());
-            return false;/*sino retorna falso y te da error */
+        } catch (java.io.IOException e) {
+            System.err.println("guardarVentaCliente (IO): " + e.getMessage());
+            return false;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            System.err.println("guardarVentaCliente (Interrupted): " + e.getMessage());
+            return false;
         }
     }
 
-    public boolean GuardarPedidoMesas(
+    
+public boolean GuardarPedidoMesas(
             String nombreMesa,
             List<Long> idProductos,
             List<Integer> cantidades,
@@ -142,30 +149,26 @@ public class VentasBackend {
         return GuardarPedidos(idMesa, idProductos, cantidades, estado, observaciones);
     }
 
-    public List<VentaFilaDto> cargarVentasDelDia(LocalDate fecha) {
+    public List<java.util.Map<String, Object>> cargarVentasDelDia(LocalDate fecha) {
         try {
-
             var solicitud = HttpRequest.newBuilder()
                     .uri(URI.create(BASE_URL + "/ventas?fecha=" + fecha.toString()))
                     .GET()
                     .build();
 
             var response = http.send(solicitud, HttpResponse.BodyHandlers.ofString());
-            
-            if (response.statusCode() >= 200 && response.statusCode() < 300) {
 
+            if (response.statusCode() >= 200 && response.statusCode() < 300) {
                 var array = TraductorJSON.readTree(response.body());
-                var out = new ArrayList<VentaFilaDto>();
+                var out = new ArrayList<java.util.Map<String, Object>>();
 
                 if (array.isArray()) {
-
                     for (var n : array) {
                         String nombre
                                 = n.hasNonNull("nombreEmpresa") ? n.get("nombreEmpresa").asText()
                                 : n.hasNonNull("nombreCliente") ? n.get("nombreCliente").asText()
                                 : n.hasNonNull("nombreMesa") ? n.get("nombreMesa").asText()
                                 : "";
-                        // Fallback: si no vino nombre en la raíz, tomarlo de cliente.nombre
                         if ((nombre == null || nombre.isBlank())
                                 && n.hasNonNull("cliente")
                                 && n.get("cliente").isObject()
@@ -175,77 +178,44 @@ public class VentasBackend {
                             nombre = (nombre == null ? "" : nombre.trim());
                         }
                         var desc = n.hasNonNull("descripcion") ? n.get("descripcion").asText() : "";
-
+                        var obs = n.hasNonNull("observaciones") ? n.get("observaciones").asText() : "";
                         BigDecimal monto = BigDecimal.ZERO;
                         if (n.hasNonNull("monto")) {
                             monto = new BigDecimal(n.get("monto").asText())
                                     .setScale(2, RoundingMode.HALF_UP);
                         }
-
                         TipoDePago estado = TipoDePago.EFECTIVO;
                         if (n.hasNonNull("estado")) {
-                            try {
-                                estado = TipoDePago.valueOf(n.get("estado").asText());
-                            } catch (Exception ignore) {
-                            }
+                            try { estado = TipoDePago.valueOf(n.get("estado").asText()); } catch (Exception ignore) {}
                         }
-
-                        // NUEVO: opcionalmente mapear idCliente y tipoCliente si vienen
-                        Long idCliente = null;/*inicializamos la variable idCliente valiendo null */
-
-                        if (n.hasNonNull("idCliente")) {/* si el objeto JSON n tiene la clave
-                                                                  "idCliente" y no es nula entramos*/
-
-                            idCliente = n.get("idCliente").asLong();/*Entrá dentro del objeto JSON
-                                                                                  n, buscá el campo llamado
-                                                                                  idCliente, sacá el valor que
-                                                                                  tenga y guardalo en la variable
-                                                                                  Java idCliente*/
-
-                        } else if (n.hasNonNull("cliente")/*si adentro de el objeto json que es n hay
-                                                                      un campo llamado cliente*/
-                                && n.get("cliente").isObject()/* y ademas esa propiedad es un objeto
-                                                                           json*/
-                                && n.get("cliente").hasNonNull("idCliente")) {/*y a su
-                                                                                                vez dentro de ese
-                                                                                           objeto existe un campo
-                                                                                           idCliente entramos*/
-
-                            idCliente = n.get("cliente").get("idCliente").asLong();/*obtenemos el id dentro
-                                                                                                            de el objeto json cliente
-                                                                                                            dentro de n */
+                        Long idCliente = null;
+                        if (n.hasNonNull("idCliente")) {
+                            idCliente = n.get("idCliente").asLong();
+                        } else if (n.hasNonNull("cliente")
+                                && n.get("cliente").isObject()
+                                && n.get("cliente").hasNonNull("idCliente")) {
+                            idCliente = n.get("cliente").get("idCliente").asLong();
                         }
-                        TipoCliente tipoCli = null;/*creo una variable del tipo cliente(backend) y lo dejo en
-                                                    null por ahora */
-                        if (n.hasNonNull("tipoCliente")) {/*pregunto si n tiene el campo tipocliente
-                                                                      y si ese mismo tiene valor, si no es null
-                                                                      entramos */
-
-                            tipoCli = TipoCliente.valueOf(n.get("tipoCliente").asText());/*La
-                                                                                                   línea toma el
-                                                                                   valor textual "tipoCliente" del
-                                                                                 JSON y lo convierte en uno de
-                                                                                 los valores del enum TipoCliente
-                                                                                  (CLIENTE, EMPRESA o MESA)*/
-
-                        } else if (n.hasNonNull("cliente")/*si n tiene el campo cliente y ese no es null */
-                                && n.get("cliente").isObject()/*y a su vez cliente es un objeto json */
-                                && n.get("cliente").hasNonNull("tipoCliente")) {/*y a su vez
-                                                                                                cliente tiene un
-                                                                                              campo tipocliente y
-                                                                                         tiene valor por lo tanto
-                                                                                         no es null*/
-                            tipoCli = TipoCliente.valueOf(n.get("cliente").get("tipoCliente").asText());/*Convierte el texto que viene en
-                                                                                                                                el JSON dentro de cliente.tipoCliente
-                                                                                                                                en uno de los valores del enum TipoCliente
-                                                                                                                                (CLIENTE, EMPRESA o MESA) y lo guarda en
-                                                                                                                                la variable tipoCli */
-
+                        TipoCliente tipoCli = null;
+                        if (n.hasNonNull("tipoCliente")) {
+                            tipoCli = TipoCliente.valueOf(n.get("tipoCliente").asText());
+                        } else if (n.hasNonNull("cliente")
+                                && n.get("cliente").isObject()
+                                && n.get("cliente").hasNonNull("tipoCliente")) {
+                            tipoCli = TipoCliente.valueOf(n.get("cliente").get("tipoCliente").asText());
                         } else if (nombre.toLowerCase().startsWith("mesa ")) {
-                            tipoCli = TipoCliente.MESA; // fallback si solo vino nombre tipo "MESA X"
+                            tipoCli = TipoCliente.MESA;
                         }
 
-                        out.add(new VentaFilaDto(nombre, desc, monto, estado, idCliente, tipoCli));
+                        var fila = new java.util.HashMap<String, Object>();
+                        fila.put("nombre", nombre);
+                        fila.put("descripcion", desc);
+                        fila.put("monto", monto);
+                        fila.put("estado", estado);
+                        fila.put("observaciones", obs);
+                        fila.put("idCliente", idCliente);
+                        fila.put("tipoCliente", tipoCli);
+                        out.add(fila);
                     }
                 }
                 return out;
@@ -256,6 +226,7 @@ public class VentasBackend {
         }
         return List.of();
     }
+
     // =====================
 // LISTAR CLIENTES POR TIPO (EMPRESA/CLIENTE/MESA)
 // =====================
