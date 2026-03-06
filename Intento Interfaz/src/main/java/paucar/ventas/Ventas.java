@@ -418,7 +418,7 @@ public final class Ventas extends BorderPane {
     // Sección: Diálogo "Agregar pedido" (modular)
     // =========================================================================================
     private void abrirDialogoAgregar() {
-        var dlg = new Agregar(clientes, productos); // usa las listas ya cargadas
+        var dlg = new Agregar(clientes, productos, venta); // usa las listas ya cargadas
         var res = dlg.show(getScene() == null ? null : getScene().getWindow());
 
         res.ifPresent(this::confirmarPedidoAsync);
@@ -453,62 +453,57 @@ public final class Ventas extends BorderPane {
         }
     }
 
-    // =========================================================================================
-    // Guardado asíncrono (backend)
-    // =========================================================================================
-    private void confirmarPedidoAsync(Agregar.PedidoNuevo p) {
-        TipoCliente tipo = deducirTipoCliente(p.nombreCliente);
+    private void confirmarPedidoAsync(String nombreCliente) {
+        TipoCliente tipo = deducirTipoCliente(nombreCliente);
 
-        venta.setIdProductos(p.idProductos);
-        venta.setCantidades(p.cantidades);
-        venta.setEstado(p.estado);
-        venta.setObservaciones(p.observaciones);
+        // 1) Tomar COPIAS defensivas de las listas del VentaRequest
+        java.util.List<Long> ids = new java.util.ArrayList<>(venta.getIdProductos());
+        java.util.List<Integer> cants = new java.util.ArrayList<>(venta.getCantidades());
+        TipoDePago estado = venta.getEstado();
+        String obs = (venta.getObservaciones() == null ? "" : venta.getObservaciones());
 
         if (tipo == TipoCliente.MESA) {
-            CompletableFuture
-                    .supplyAsync(() -> backend.GuardarPedidoMesas(
-                    p.nombreCliente, p.idProductos, p.cantidades, p.estado, p.observaciones))
-                    .thenAccept(ok -> Platform.runLater(() -> {
+            // 2) Pasar las COPIAS al backend (no las listas internas de 'venta')
+            java.util.concurrent.CompletableFuture
+                    .supplyAsync(() -> backend.GuardarPedidoMesas(nombreCliente, ids, cants, estado, obs))
+                    .thenAccept(ok -> javafx.application.Platform.runLater(() -> {
                 if (ok) {
                     recargarDelBackend();
-
-                }
-            }));
+            
+                }}));
             return;
         }
 
-// 4) Si NO es MESA: crear/buscar cliente y guardar
-    CompletableFuture
-            .runAsync(() -> clientesService.crearClienteSiNoExiste(p.nombreCliente, tipo))
-            .thenCompose(v -> CompletableFuture.supplyAsync(() -> clientesService.obtenerClienteIdPorNombre(p.nombreCliente)))
-            .thenCompose(idCliente -> {
-                if (idCliente == null) {
-                    Platform.runLater(() -> {
-                        var dlg = new javafx.scene.control.Alert(javafx.scene.control.Alert.AlertType.WARNING);
-                        dlg.setTitle("Cliente no encontrado");
-                        dlg.setHeaderText("No se pudo obtener el ID del cliente");
-                        dlg.setContentText("Verificá el nombre del cliente o volvé a intentar.");
-                        dlg.showAndWait();
-                    });
-                    return CompletableFuture.completedFuture(false);
-                }
-
-                // (Opcional) redundante: ClientesService ya lo setea; igual lo dejamos por claridad:
-                venta.setIdCliente(idCliente);
-
-                // Guardás como antes (si aún no querés postear el DTO completo)
-                return CompletableFuture.supplyAsync(() -> backend.GuardarPedidos(
-                        idCliente, p.idProductos, p.cantidades, p.estado, p.observaciones));
-            })
-            .thenAccept(ok -> Platform.runLater(() -> {
-                if (ok) {
-                    if (!clientes.contains(p.nombreCliente)) {
-                        clientes.add(p.nombreCliente);
-                        FXCollections.sort(clientes, String.CASE_INSENSITIVE_ORDER);
+        // 3) Cliente/Empresa: crear si no existe, obtener id y guardar usando las COPIAS
+        java.util.concurrent.CompletableFuture
+                .runAsync(() -> clientesService.crearClienteSiNoExiste(nombreCliente, tipo))
+                .thenCompose(v -> java.util.concurrent.CompletableFuture.supplyAsync(
+                () -> clientesService.obtenerClienteIdPorNombre(nombreCliente)))
+                .thenCompose(idCliente -> {
+                    if (idCliente == null) {
+                        javafx.application.Platform.runLater(() -> {
+                            var dlg = new javafx.scene.control.Alert(javafx.scene.control.Alert.AlertType.WARNING);
+                            dlg.setTitle("Cliente no encontrado");
+                            dlg.setHeaderText("No se pudo obtener el ID del cliente");
+                            dlg.setContentText("Verificá el nombre del cliente o volvé a intentar.");
+                            dlg.showAndWait();
+                        });
+                        return java.util.concurrent.CompletableFuture.completedFuture(false);
                     }
-                    recargarDelBackend();
+                    venta.setIdCliente(idCliente);
+                    return java.util.concurrent.CompletableFuture.supplyAsync(()
+                            -> backend.GuardarPedidos(idCliente, ids, cants, estado, obs)
+                    );
+                })
+                .thenAccept(ok -> javafx.application.Platform.runLater(() -> {
+            if (ok) {
+                if (!clientes.contains(nombreCliente)) {
+                    clientes.add(nombreCliente);
+                    javafx.collections.FXCollections.sort(clientes, String.CASE_INSENSITIVE_ORDER);
                 }
-            }));
+                recargarDelBackend();
+            }
+        }));
     }
 
     // =========================================================================================

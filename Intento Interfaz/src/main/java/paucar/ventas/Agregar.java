@@ -4,6 +4,7 @@ import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.uade.tpo.demo.entity.TipoDePago;
+import com.uade.tpo.demo.entity.dto.VentaRequest;
 
 import javafx.application.Platform;
 import javafx.beans.binding.Bindings;
@@ -31,15 +32,14 @@ import paucar.service.ProductosService;
 public class Agregar {
 
     // ====== DTOs internos ======
-    public static class PedidoNuevo {
+    /*public static class PedidoNuevo {
 
         public String nombreCliente;
         public java.util.List<Long> idProductos = new java.util.ArrayList<>();
         public java.util.List<Integer> cantidades = new java.util.ArrayList<>();
         public TipoDePago estado;
         public String observaciones;
-    }
-
+    }*/
     public static record Formulario(Long idProducto, Integer cantidad) {
 
     }
@@ -47,25 +47,27 @@ public class Agregar {
     // ====== Datos de trabajo que vienen de Ventas ======
     private final ObservableList<String> clientes; // lista base
     private final ObservableList<ProductosService.ProductoItem> productos; // lista base
+    private final VentaRequest venta;
 
     public Agregar(ObservableList<String> clientes,
-            ObservableList<ProductosService.ProductoItem> productos) {
+            ObservableList<ProductosService.ProductoItem> productos, VentaRequest venta) {
         // Usamos directamente las listas provistas por Ventas
         this.clientes = clientes;
         this.productos = productos;
+        this.venta = venta;
     }
 
     /*Muestra el diálogo modal*/
-    public Optional<PedidoNuevo> show(Window owner) {
-        Dialog<PedidoNuevo> dialog = construirDialogoAgregar();
+    public Optional<String> show(Window owner) {
+        Dialog<String> dialog = construirDialogoAgregar();
         if (owner != null) {
             dialog.initOwner(owner);
         }
         return dialog.showAndWait();
     }
 
-    private Dialog<PedidoNuevo> construirDialogoAgregar() {
-        Dialog<PedidoNuevo> dialog = new Dialog<>();
+    private Dialog<String> construirDialogoAgregar() {
+        Dialog<String> dialog = new Dialog<>();
         dialog.setTitle("Agregar pedido");
         dialog.setResizable(true);
 
@@ -128,11 +130,10 @@ public class Agregar {
         // --- ResultConverter (mapea UI -> PedidoNuevo) ---
         dialog.setResultConverter(btn -> {
             if (btn == okType) {
-                return ConstruirPedidoListoParaBackend(cbCliente, cbEstado, tfObs, contLineas);
+                return ConstruirVentaDirectoEnRequest(cbCliente, cbEstado, tfObs, contLineas);
             }
             return null;
         });
-
         return dialog;
     }
 
@@ -140,7 +141,7 @@ public class Agregar {
         ComboBox<String> cbCliente = new ComboBox<>(clientesFiltrados);/*Hacé una cajita para elegir clientes, 
                                                                    y llenala con los papelitos que están
                                                                    en la bolsa clientesFiltrados */
-                                                                   
+
         cbCliente.setEditable(true);/*permite escribir para filtrarclientes, por alguna razon si quito
                                            esto si se puede seleccionar un cliente */
         cbCliente.setPromptText("Nombre (cliente/mesa/empresa)");
@@ -511,57 +512,64 @@ public class Agregar {
             return false;
         }
         try {
-            return Integer.parseInt(Cant.getText()) >= 1;/*retorna true si la cantidad convertida en
-                                                         entero es mayor o igual a uno */
+
+            if (Cant.getText().isBlank()) {
+                return false;
+            }
+            return Integer.parseInt(Cant.getText()) >= 1;
+
         } catch (NumberFormatException ignore) {
             return false;/*si el usuario puso un valor que no es un numero */
         }
     }
 
-    private PedidoNuevo ConstruirPedidoListoParaBackend(ComboBox<String> cbCliente,
+    private String ConstruirVentaDirectoEnRequest(
+            ComboBox<String> cbCliente,
             ComboBox<TipoDePago> cbEstado,
             TextField tfObs,
-            VBox contLineas) {/*Lo que devuelve este método (PedidoNuevo p) es lo que después se manda al 
-                              backend para guardar en la base de datos y que aparezca en la tabla */
+            VBox contLineas) {
 
-        PedidoNuevo p = new PedidoNuevo();/*Creá un pedidonuevo vacío y guardalo en la variable p */
-
-        String nombre = cbCliente.getEditor().getText();/*Tomá el texto que el usuario escribió en el
-                                                         ComboBox de clientes y guardalo en la variable
-                                                         nombre */
-        if (nombre == null || nombre.isBlank()) {/*Si el usuario no escribió nada en el ComboBox, entonces
-                                                 usá el cliente que haya seleccionado de la lista */
+        // 1) Nombre (cliente/mesa/empresa)
+        String nombre = cbCliente.getEditor().getText();
+        if (nombre == null || nombre.isBlank()) {
             nombre = cbCliente.getValue();
         }
-        p.nombreCliente = (nombre == null ? "" : nombre.trim());/*Si nombre no existe (es null), guardo
-                                                                 una cadena vacía. Si existe, lo guardo
-                                                                 sin espacios sobrantes */
+        String nombreLimpio = (nombre == null ? "" : nombre.trim());
 
-        p.estado = cbEstado.getValue();/*Guardá en el pedido el tipo de pago que el usuario seleccionó */
+        // 2) Estado y observaciones -> directo a VentaRequest
+        venta.setEstado(cbEstado.getValue());
+        venta.setObservaciones(tfObs.getText() == null ? "" : tfObs.getText().trim());
 
-        p.observaciones = tfObs.getText() == null ? "" : tfObs.getText().trim();/*Si el usuario escribió
-                                                                               algo en observaciones,
-                                                                               guardalo sin espacios al
-                                                                               principio ni al final;
-                                                                               si no guardá una cadena
-                                                                               vacía */
+        // 3) Asegurar listas y limpiarlas
+        if (venta.getIdProductos() == null) {
+            venta.setIdProductos(new java.util.ArrayList<>());
+        } else {
+            venta.getIdProductos().clear();
+        }
+        if (venta.getCantidades() == null) {
+            venta.setCantidades(new java.util.ArrayList<>());
+        } else {
+            venta.getCantidades().clear();
+        }
 
-        // Mapear las líneas
-        for (var n : contLineas.getChildren()) {/*Recorre cada hijo del VBox contLineas: cada hijo es una
-                                                fila HBox con [producto, cantidad, eliminar]*/
-
-            if (n instanceof HBox fila) {/*Entonces la fila HBox que recorremos es una fila de productos, y
-                                          Si pongo 5 productos distintos, los reviso cada uno y pregunto
-                                          por cada uno si es un HBox */
-                FichaPedido(fila).ifPresent(LineaProd -> {/*Si la fila es válida, recibo la línea
-                                                          LineaProd (idProducto, cantidad) y agrego
-                                                          esos datos al pedido */
-                    p.idProductos.add(LineaProd.idProducto());
-                    p.cantidades.add(LineaProd.cantidad());
+        // 4) Volcar cada fila válida usando tu FichaPedido(...)
+        for (var n : contLineas.getChildren()) {
+            if (n instanceof HBox fila) {
+                FichaPedido(fila).ifPresent(linea -> {
+                    venta.getIdProductos().add(linea.idProducto());
+                    venta.getCantidades().add(linea.cantidad());
                 });
             }
         }
-        return p;/*Devuelve el pedido completo (p) con todos los datos que juntamos de la pantalla */
+
+        // (Logs opcionales)
+        System.out.println("DEBUG(Agregar) venta.idProductos=" + venta.getIdProductos());
+        System.out.println("DEBUG(Agregar) venta.cantidades=" + venta.getCantidades());
+        System.out.println("DEBUG(Agregar) venta.estado=" + venta.getEstado());
+        System.out.println("DEBUG(Agregar) venta.observaciones=" + venta.getObservaciones());
+
+        // 5) El diálogo devuelve SOLO el nombre; Ventas resuelve idCliente y hace el POST
+        return nombreLimpio;
     }
 
     private Optional<Formulario> FichaPedido(HBox fila) {

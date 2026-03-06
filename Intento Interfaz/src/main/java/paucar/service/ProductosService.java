@@ -53,6 +53,9 @@ public class ProductosService {
             var response = http.send(solicitud, HttpResponse.BodyHandlers.ofString());/*envia la solicitud y
                                                                                       guarda la response */
 
+            System.out.println("[/productos] status=" + response.statusCode());
+            System.out.println("[/productos] body=" + response.body());
+
             if (response.statusCode() >= 200 && response.statusCode() < 300) {/*si el codigo de la response esta
                                                                               entre 200 y 299*/
 
@@ -62,7 +65,7 @@ public class ProductosService {
 
                 // *** USO de VentaRequest (sin estructuras nuevas) ***
                 List<Long> idsSeleccionados = venta.getIdProductos();
-
+                System.out.println("DEBUG idsSeleccionados = " + idsSeleccionados);
                 if (array.isArray()) {/*verifica que la variable array es un vector/lista */
                     for (var n : array) {/*recorre con n el vector array de productos */
 

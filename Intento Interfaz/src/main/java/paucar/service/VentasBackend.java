@@ -32,7 +32,7 @@ public class VentasBackend {
     private final VentaRequest venta;
 
     // --- Constructor ---
-    public VentasBackend(String BASE_URL, ClientesService clientesService,VentaRequest venta) {/*Recibe un parámetro llamado BASE_URL (un String) que debería ser
+    public VentasBackend(String BASE_URL, ClientesService clientesService, VentaRequest venta) {/*Recibe un parámetro llamado BASE_URL (un String) que debería ser
                                             la URL base del backend */
 
         this.BASE_URL = Objects.requireNonNull(BASE_URL);/*si el parámetro es null, lanza un NullPointerException
@@ -101,6 +101,12 @@ public class VentasBackend {
                 }
             }
 
+            System.out.println("DEBUG idProductos=" + venta.getIdProductos());
+            System.out.println("DEBUG cantidades=" + venta.getCantidades());
+            System.out.println("DEBUG idCliente=" + venta.getIdCliente());
+            System.out.println("DEBUG estado=" + venta.getEstado());
+            System.out.println("DEBUG observaciones=" + venta.getObservaciones());
+
             // Serializar el MISMO VentaRequest compartido
             String body = TraductorJSON.writeValueAsString(venta);
 
@@ -111,6 +117,10 @@ public class VentasBackend {
                     .build();
 
             HttpResponse<String> response = http.send(solicitud, HttpResponse.BodyHandlers.ofString());
+
+            System.out.println("[POST /ventas] status=" + response.statusCode());
+            System.out.println("[POST /ventas] body=" + response.body());
+
             return response.statusCode() >= 200 && response.statusCode() < 300;
 
         } catch (java.io.IOException e) {
@@ -123,8 +133,7 @@ public class VentasBackend {
         }
     }
 
-    
-public boolean GuardarPedidoMesas(
+    public boolean GuardarPedidoMesas(
             String nombreMesa,
             List<Long> idProductos,
             List<Integer> cantidades,
@@ -186,7 +195,10 @@ public boolean GuardarPedidoMesas(
                         }
                         TipoDePago estado = TipoDePago.EFECTIVO;
                         if (n.hasNonNull("estado")) {
-                            try { estado = TipoDePago.valueOf(n.get("estado").asText()); } catch (Exception ignore) {}
+                            try {
+                                estado = TipoDePago.valueOf(n.get("estado").asText());
+                            } catch (Exception ignore) {
+                            }
                         }
                         Long idCliente = null;
                         if (n.hasNonNull("idCliente")) {
@@ -231,7 +243,6 @@ public boolean GuardarPedidoMesas(
 // LISTAR CLIENTES POR TIPO (EMPRESA/CLIENTE/MESA)
 // =====================
 // NUEVO
-
     public java.util.List<String> obtenerClientesPorTipo(TipoCliente tipoBuscado) {
         try {
             var solicitud = HttpRequest.newBuilder()
