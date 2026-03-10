@@ -142,11 +142,11 @@ public final class Ventas extends BorderPane {
     }
 
     // ====== Estado de la vista ======
-    private final ObservableList<Fila> filas = FXCollections.observableArrayList();
+    private final ObservableList<Fila> RenglonDeLaTabla = FXCollections.observableArrayList();
     private final ObjectProperty<BigDecimal> total = new SimpleObjectProperty<>(BigDecimal.ZERO);
 
     // ====== Componentes ======
-    private final TableView<Fila> tabla = new TableView<>(filas);
+    private final TableView<Fila> tabla = new TableView<>(RenglonDeLaTabla);
     private final Button btnAgregar = new Button("+ Agregar");
     private final Button btnQuitar = new Button("Quitar seleccionado");
 
@@ -181,7 +181,7 @@ public final class Ventas extends BorderPane {
     }
 
     private void initBindings() {
-        filas.addListener((javafx.collections.ListChangeListener<Fila>) c -> recomputeTotal());
+        RenglonDeLaTabla.addListener((javafx.collections.ListChangeListener<Fila>) c -> MontoTotalActual());
     }
 
     // =========================================================================================
@@ -201,7 +201,7 @@ public final class Ventas extends BorderPane {
 
         btnAgregar.getStyleClass().add("btn-success");/*ponele los estilos de mi css llamado btn
                                                          success */
-        btnAgregar.setOnAction(e -> abrirDialogoAgregar());/*Cuando el usuario haga clic en + Agregar,
+        btnAgregar.setOnAction(e -> VentanaAgregarPedido());/*Cuando el usuario haga clic en + Agregar,
                                                            abrí el diálogo para cargar un nuevo pedido */
 
         var separador = new Region();/*crea separador invisible */
@@ -270,7 +270,7 @@ public final class Ventas extends BorderPane {
         // Columna: Monto (formateado)
         var colMonto = new TableColumn<Fila, String>("Monto");
         colMonto.setCellValueFactory(c -> Bindings.createStringBinding(
-                () -> formatear(c.getValue().getMonto()), c.getValue().montoProperty()));
+                () -> FormatearMonto(c.getValue().getMonto()), c.getValue().montoProperty()));
         colMonto.setCellFactory(TextFieldTableCell.forTableColumn());
         colMonto.setEditable(false);
         colMonto.setPrefWidth(140);
@@ -335,9 +335,9 @@ public final class Ventas extends BorderPane {
         btnQuitar.setOnAction(e -> {
             var sel = tabla.getSelectionModel().getSelectedItem();
             if (sel != null) {
-                filas.remove(sel);
+                RenglonDeLaTabla.remove(sel);
             }
-            recomputeTotal();
+            MontoTotalActual();
         });
 
         tabla.getColumns().setAll(java.util.List.of(colNombre, colDesc, colMonto, colEstado, colObs));
@@ -356,7 +356,7 @@ public final class Ventas extends BorderPane {
         TextoVisualTotal.getStyleClass().add("total-monto");/*crea total-monto para en algun momento
                                                                estilarlo con css */
         TextoVisualTotal.textProperty()
-                .bind(Bindings.createStringBinding(() -> formatear(total.get()), total));/*Cada vez que total
+                .bind(Bindings.createStringBinding(() -> FormatearMonto(total.get()), total));/*Cada vez que total
                                                                                  cambie, actualiza
                                                                               automáticamente el texto del
                                                                              Label con el total formateado */
@@ -394,8 +394,11 @@ public final class Ventas extends BorderPane {
     }
 
     public void recargarDelBackend() {
-        CompletableFuture
-                .supplyAsync(() -> backend.cargarVentasDelDia(LocalDate.now()))
+        CompletableFuture /*CompletableFuture es una herramienta de Java que te permite ejecutar código en
+                          segundo plano sin trabar la interfaz gráfica (UI)*/
+                .supplyAsync(() -> backend.cargarVentasDelDia(LocalDate.now()))/* hago la carga de ventas
+                                                                               de hoy en segundo plano para
+                                                                               no trabar la UI */
                 .thenAccept(lista -> Platform.runLater(() -> {
             var nuevas = FXCollections.<Fila>observableArrayList();
             for (java.util.Map<String, Object> dto : lista) {
@@ -409,52 +412,75 @@ public final class Ventas extends BorderPane {
                 nuevas.add(f);
             }
 
-            filas.setAll(nuevas);
-            recomputeTotal();
+            RenglonDeLaTabla.setAll(nuevas);
+            MontoTotalActual();
         }));
     }
 
-    // =========================================================================================
-    // Sección: Diálogo "Agregar pedido" (modular)
-    // =========================================================================================
-    private void abrirDialogoAgregar() {
-        var dlg = new Agregar(clientes, productos, venta); // usa las listas ya cargadas
-        var res = dlg.show(getScene() == null ? null : getScene().getWindow());
+    private void VentanaAgregarPedido() {/*este metodo es el que se ejecuta cuando tocás el botón “+ Agregar”
+                                        en la pantalla de Ventas */
 
-        res.ifPresent(this::confirmarPedidoAsync);
+        var dlg = new Agregar(clientes, productos, venta);/*crea un objeto nuevo de la clase Agregar y le
+                                                          pasa clientes, productos y venta al constructor */
+
+        var res = dlg.Mostrar(getScene() == null ? null : getScene().getWindow());/*Muestra el diálogo dlg
+                                                                             usando como owner la ventana
+                                                                             actual (si existe) y guarda en
+                                                                          res el Optional con el resultado
+                                                                           del usuario */
+
+        res.ifPresent(this::confirmarPedidoAsync);/*Si el usuario confirmó el pedido usando el boton
+                                                  confirmar, llamar a confirmarPedidoAsync con el valor
+                                                  devuelto; si canceló, no hacer nada */
     }
 
     // =========================================================================================
     // Utilitarios
     // =========================================================================================
-    private void recomputeTotal() {
-        BigDecimal t = filas.stream()
-                .map(Fila::getMonto)
-                .filter(v -> v != null)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-        total.set(t.setScale(2, RoundingMode.HALF_UP));
+    private void MontoTotalActual() {
+        BigDecimal t = RenglonDeLaTabla.stream()/*convierto la lista RenglonDeLaTabla en un Stream, que es
+                                                una forma de recorrer la lista como una secuencia de
+                                                elementos para poder aplicar operaciones como map, filter y
+                                                reduce */
+                .filter(f -> f != null/*filtra si la fila es valida (tambien podria ser un renglon vacio */
+                && f.getEstado() != null/*filtra si tiene estado */
+                && f.getEstado() != TipoDePago.DEBE)/*y filtra si el tipodepago no es "DEBE"*/
+                .map(Fila::getMonto)/*de cada fila obtengo solo el monto */
+                .reduce(BigDecimal.ZERO, BigDecimal::add);/*recorro los montos y los junto en un único
+                                                          resultado sumándolos, empezando desde 0 */
+        total.set(t.setScale(2, RoundingMode.HALF_UP));/*ajusto el total a 2 decimales con
+                                                                 redondeo clásico y actualizo la propiedad
+                                                                 'total' para refrescar la UI */
     }
 
-    private String formatear(BigDecimal v) {
-        if (v == null) {
-            return "$ 0,00";
+    private String FormatearMonto(BigDecimal v) {
+        if (v == null) {/*si el valor del monto es null */
+            return "$ 0,00";/*retorna cero con 2 decimales */
         }
-        return MONEDA.format(v);
+        return MONEDA.format(v);/*sino retorna el monto formateado como moneda */
     }
 
     // Si no lo usás, podés eliminarlo o anotar @SuppressWarnings("unused")
     @SuppressWarnings("unused")
     private BigDecimal parseMoneda(String s) {
         try {
-            String limpio = s.replace("$", "").replace(" ", "").replace(".", "").replace(",", ".");
-            return new BigDecimal(limpio).setScale(2, RoundingMode.HALF_UP);
+            String limpio = s.replace("$", "")/*quita el simbolo de moneda */
+                    .replace(" ", "")/*quita los espacios vacios */
+                    .replace(".", "")/*quita los puntos */
+                    .replace(",", ".");/*reemplaza las comas por puntos para
+                                                                    utilizar los decimales en modo gringo */
+
+            return new BigDecimal(limpio).setScale(2, RoundingMode.HALF_UP);/*retorna el valor
+                                                                                      limpio y solo con 2
+                                                                                      decimales */
         } catch (Exception e) {
-            return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+            return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);/*retorna cero con 2
+                                                                               decimales */
         }
     }
 
     private void confirmarPedidoAsync(String nombreCliente) {
-        TipoCliente tipo = deducirTipoCliente(nombreCliente);
+        TipoCliente tipo = ClientesService.deducirTipoCliente(nombreCliente);
 
         // 1) Tomar COPIAS defensivas de las listas del VentaRequest
         java.util.List<Long> ids = new java.util.ArrayList<>(venta.getIdProductos());
@@ -469,8 +495,9 @@ public final class Ventas extends BorderPane {
                     .thenAccept(ok -> javafx.application.Platform.runLater(() -> {
                 if (ok) {
                     recargarDelBackend();
-            
-                }}));
+
+                }
+            }));
             return;
         }
 
@@ -504,25 +531,5 @@ public final class Ventas extends BorderPane {
                 recargarDelBackend();
             }
         }));
-    }
-
-    // =========================================================================================
-    // Heurística de tipo de cliente
-    // =========================================================================================
-    private TipoCliente deducirTipoCliente(String nombre) {
-        if (nombre == null) {
-            return TipoCliente.CLIENTE;
-        }
-        String n = nombre.trim().toLowerCase();
-
-        if (n.startsWith("mesa ")) {
-            return TipoCliente.MESA;
-        }
-
-        if (n.contains(" srl") || n.endsWith(" srl") || n.contains(" s.a") || n.contains(" sa")
-                || n.contains("empresa") || n.contains("estudio") || n.contains("industria")) {
-            return TipoCliente.EMPRESA;
-        }
-        return TipoCliente.CLIENTE;
     }
 }

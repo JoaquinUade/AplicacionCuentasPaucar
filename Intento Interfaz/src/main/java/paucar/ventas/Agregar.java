@@ -3,6 +3,7 @@ package paucar.ventas;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import com.uade.tpo.demo.entity.TipoCliente;
 import com.uade.tpo.demo.entity.TipoDePago;
 import com.uade.tpo.demo.entity.dto.VentaRequest;
 
@@ -21,6 +22,8 @@ import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TextField;
+import javafx.scene.control.ToggleButton;
+import javafx.scene.control.ToggleGroup;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
@@ -31,15 +34,6 @@ import paucar.service.ProductosService;
 
 public class Agregar {
 
-    // ====== DTOs internos ======
-    /*public static class PedidoNuevo {
-
-        public String nombreCliente;
-        public java.util.List<Long> idProductos = new java.util.ArrayList<>();
-        public java.util.List<Integer> cantidades = new java.util.ArrayList<>();
-        public TipoDePago estado;
-        public String observaciones;
-    }*/
     public static record Formulario(Long idProducto, Integer cantidad) {
 
     }
@@ -57,18 +51,34 @@ public class Agregar {
         this.venta = venta;
     }
 
-    /*Muestra el diálogo modal*/
-    public Optional<String> show(Window owner) {
-        Dialog<String> dialog = construirDialogoAgregar();
-        if (owner != null) {
-            dialog.initOwner(owner);
+    private TipoCliente tipoSeleccionado = null;
+
+    public TipoCliente getTipoSeleccionado() {
+        return tipoSeleccionado;
+    }
+
+    public Optional<String> Mostrar(Window owner) {
+        Dialog<String> VentanaEmergente = construirDialogoAgregar();/*creo una variable y le asigno todo
+                                                                    el contenido que construye el metodo */
+
+        if (owner != null) {/*Esta línea pregunta si existe una ventana principal (owner) antes de asociar
+                            el diálogo a ella */
+            VentanaEmergente.initOwner(owner);/*Le asigna una ventana principal para que la ventana
+                                               emergente se muestre encima y funcione como un diálogo
+                                               modal (ventana emergente que no te permite acceder a la
+                                               ventana de atras hasta que la cierres*/
         }
-        return dialog.showAndWait();
+        return VentanaEmergente.showAndWait();/*Devuelve el resultado de mostrar la ventana emergente y
+                                              esperar hasta que el usuario la cierre */
     }
 
     private Dialog<String> construirDialogoAgregar() {
-        Dialog<String> dialog = new Dialog<>();
-        dialog.setTitle("Agregar pedido");
+        Dialog<String> dialog = new Dialog<>();/*Creá una ventana emergente llamada dialog que, cuando se
+                                               cierre presionando ‘Agregar’, va a devolver un texto como
+                                               resultado */
+                                               
+        dialog.setTitle("Agregar pedido");/*nombra a la ventana emergente “Agregar pedido” como
+                                                título en la barra superior */
         dialog.setResizable(true);
 
         ButtonType okType = new ButtonType("Agregar", ButtonBar.ButtonData.OK_DONE);
@@ -90,10 +100,37 @@ public class Agregar {
 
         // --- Estado y observaciones ---
         ComboBox<TipoDePago> cbEstado = crearComboEstado();
-        TextField tfObs = crearTextFieldObservaciones();
+        TextField tfObs = TextFieldObservaciones();
+
+// --- NUEVO: selector tipo cliente (Mesa - Cliente - Empresa) ---
+        ToggleGroup tgTipoCliente = new ToggleGroup();
+
+        ToggleButton btnMesa = new ToggleButton("Mesa");
+        ToggleButton btnCliente = new ToggleButton("Cliente");
+        ToggleButton btnEmpresa = new ToggleButton("Empresa");
+
+        btnMesa.setToggleGroup(tgTipoCliente);
+        btnCliente.setToggleGroup(tgTipoCliente);
+        btnEmpresa.setToggleGroup(tgTipoCliente);
+
+        // Por defecto: Cliente seleccionado (centro)
+        btnCliente.setSelected(true);
+
+        // Guardamos el valor de dominio en userData para leerlo fácil más adelante
+        btnMesa.setUserData(TipoCliente.MESA);
+        btnCliente.setUserData(TipoCliente.CLIENTE);
+        btnEmpresa.setUserData(TipoCliente.EMPRESA);
+
+        HBox selectorTipoCliente = new HBox(6, btnMesa, btnCliente, btnEmpresa);
+        selectorTipoCliente.setAlignment(Pos.CENTER_LEFT);
+
+        // (Opcional) estilos simples para que se vea “segmentado”
+        btnMesa.getStyleClass().add("segmented-left");
+        btnCliente.getStyleClass().add("segmented-center");
+        btnEmpresa.getStyleClass().add("segmented-right");
 
         // --- Layout ---
-        GridPane grid = construirGridDialogo(cbCliente, contLineas, btnAgregarLinea, cbEstado, tfObs);
+        GridPane grid = buildFormularioPedido(cbCliente, contLineas, btnAgregarLinea, cbEstado, tfObs, selectorTipoCliente);
 
         // --- Validación del botón OK ---
         // Tomar referencias de la fila inicial (la que viene por defecto)
@@ -104,15 +141,19 @@ public class Agregar {
         TextField tfCant0 = (TextField) fila0.getChildren().get(1);
 
         Node okBtn = dialog.getDialogPane().lookupButton(okType);
+
         okBtn.disableProperty().bind(
                 Bindings.createBooleanBinding(
-                        () -> BotonAgregarInhabilitado(cbCliente, contLineas),
-                        // Dependencias que ya tenías:
+                        ()
+                        -> // Lo tuyo de antes (nombre y al menos una línea válida)...
+                        BotonAgregarInhabilitado(cbCliente, contLineas)
+                        // ...más: obligar a elegir tipo
+                        || tgTipoCliente.getSelectedToggle() == null,
                         cbCliente.getEditor().textProperty(),
                         contLineas.getChildren(),
-                        // 🔹 NUEVO: observar cambios internos de la fila inicial
                         cbProd0.valueProperty(),
-                        tfCant0.textProperty()
+                        tfCant0.textProperty(),
+                        tgTipoCliente.selectedToggleProperty() // <--- observar el toggle
                 )
         );
 
@@ -127,9 +168,17 @@ public class Agregar {
         dialog.setResizable(true);
         dialog.getDialogPane().setPrefSize(600, 500);
 
-        // --- ResultConverter (mapea UI -> PedidoNuevo) ---
         dialog.setResultConverter(btn -> {
             if (btn == okType) {
+                // Si por algún motivo no hay selección, no seguimos (igual el botón está deshabilitado)
+                if (tgTipoCliente.getSelectedToggle() == null) {
+                    return null;
+                }
+
+                // Guardar el tipo en el campo de la clase (para que lo lea quien llama)
+                this.tipoSeleccionado = (TipoCliente) tgTipoCliente.getSelectedToggle().getUserData();
+
+                // Construir la venta normalmente (estado, observaciones, productos...) y devolver el nombre
                 return ConstruirVentaDirectoEnRequest(cbCliente, cbEstado, tfObs, contLineas);
             }
             return null;
@@ -242,43 +291,80 @@ public class Agregar {
     }
 
     private ComboBox<TipoDePago> crearComboEstado() {
-        ComboBox<TipoDePago> cbEstado = new ComboBox<>();
-        cbEstado.getItems().setAll(TipoDePago.values());
-        cbEstado.setValue(TipoDePago.TRANSFERENCIA);
-        return cbEstado;
+        ComboBox<TipoDePago> cbEstado = new ComboBox<>();/*crea un ComboBox vacío que podrá contener
+                                                         valores del enum TipoDePago */
+        cbEstado.getItems().setAll(TipoDePago.values());/*Carga al ComboBox todas las opciones posibles de
+                                                        tipo de pago para que el usuario pueda elegir
+                                                        cualquiera de ellas*/
+        cbEstado.setValue(TipoDePago.DEBE);/*establece que por defecto el valor seleccionado en el
+                                           ComboBox sea DEBE, es decir, que el pedido recién creado esté
+                                           marcado como pendiente de pago hasta que se cambie a otro
+                                           estado*/
+        return cbEstado;/*retorna el cbestado*/
     }
 
-    private TextField crearTextFieldObservaciones() {
-        TextField tfObs = new TextField();
-        tfObs.setPromptText("Observaciones (opcional)");
-        return tfObs;
+    private TextField TextFieldObservaciones() {
+        TextField inputObservaciones = new TextField();/*crea un objeto visual en el que se escribe */
+        inputObservaciones.setPromptText("Observaciones (opcional)");/*escribe dentro de el objeto
+                                                                        el texto observaciones (opcional)
+                                                                     en color gris claro como sugerencia y
+                                                                 se elimina cuando el usuario escribe algo */
+        return inputObservaciones;/*retorna inputobservaciones */
     }
 
-    private GridPane construirGridDialogo(ComboBox<String> cbCliente,
-            VBox contLineas,
-            Button btnAgregarLinea,
-            ComboBox<TipoDePago> cbEstado,
-            TextField tfObs) {
-        GridPane grid = new GridPane();
-        grid.setHgap(10);
-        grid.setVgap(10);
-        grid.setPadding(new Insets(10));
-        int r = 0;
+    private GridPane buildFormularioPedido(ComboBox<String> cbCliente, VBox ListaDeProductos, Button btnAñadirProducto,
+            ComboBox<TipoDePago> cbEstado, TextField inputObservaciones, Node selectorTipoCliente) {
 
-        grid.add(new Label("Nombre:"), 0, r);
-        grid.add(cbCliente, 1, r++);
+        GridPane grid = new GridPane();/*Crea un contenedor en forma de grilla para colocar las etiquetas
+                                       y los campos a rellenar del formulario */
 
-        grid.add(new Label("Productos:"), 0, r);
-        VBox productosBox = new VBox(6, contLineas, btnAgregarLinea);
-        grid.add(productosBox, 1, r++);
+        grid.setHgap(15);/*establece que haya 15 pixeles de separación horizontal entre la etiqueta
+                                y el campo a rellenar y la respuesta */
 
-        grid.add(new Label("Estado:"), 0, r);
-        grid.add(cbEstado, 1, r++);
+        grid.setVgap(15);/*establece que haya 10 pixeles de separación vertical entre las etiquetas
+                                y los campos a rellenar */
 
-        grid.add(new Label("Observaciones:"), 0, r);
-        grid.add(tfObs, 1, r++);
+        grid.setPadding(new Insets(10));/*establece que hay un margen 10px alrededor
+                                                            de dialog para que se vea estetico*/
 
-        return grid;
+        int r = 1;/*esta variable r es para controlar la fila en la que se va a colocar cada elemento del
+                  formulario, y se va incrementando cada vez que se agrega un nuevo elemento para que no
+                  se sobrepongan */
+
+        grid.add(new Label("Tipo de cliente:"), 0, r);/*Esta línea agrega la etiqueta
+                                                                        “Tipo de cliente:” en la columna
+                                                                        0 y la fila r del GridPane */
+        grid.add(selectorTipoCliente, 1, r++);/*Esta línea agrega el selector de tipo de
+                                                           cliente (que es un HBox con los botones) en la
+                                                           columna 1 y la fila r++*/
+
+        grid.add(new Label("Nombre:"), 0, r);/*Esta línea agrega la etiqueta “Nombre:” 
+                                                               en la columna 0 y la fila r del GridPane */
+
+        grid.add(cbCliente, 1, r++);/*agrega el ComboBox del cliente(la parte donde escribimos
+                                                el nombre del cliente) en columna 1 y fila r*/
+
+        grid.add(new Label("Productos:"), 0, r);/*añade la etiqueta productos*/
+
+        VBox productosBox = new VBox(6, ListaDeProductos, btnAñadirProducto);/*Crea un contenedor
+                                                                                   vertical (VBox) con 6
+                                                                                   píxeles de espacio entre
+                                                                                   cada producto y el 
+                                                                                   botón btnAñadirProducto*/
+
+        grid.add(productosBox, 1, r++);/*Esta línea coloca el contenedor productosBox en la
+                                                    columna 1 y fila r del GridPane, y después aumenta r
+                                                    para pasar a la siguiente fila */
+
+        grid.add(new Label("Estado:"), 0, r);/*añade la etiqueta estado */
+
+        grid.add(cbEstado, 1, r++);/*añade el selector de tipodepago o el estado del pago */
+
+        grid.add(new Label("Observaciones:"), 0, r);/*añade la etiqueta observaciones */
+        grid.add(inputObservaciones, 1, r++);/*añade el campo de texto para las observaciones */
+
+        return grid;/*devuelve el GridPane completo con todos los elementos del formulario ya organizados
+                     en filas y columnas */
     }
 
     private HBox crearLineaProducto(VBox contLineas) {
@@ -523,11 +609,8 @@ public class Agregar {
         }
     }
 
-    private String ConstruirVentaDirectoEnRequest(
-            ComboBox<String> cbCliente,
-            ComboBox<TipoDePago> cbEstado,
-            TextField tfObs,
-            VBox contLineas) {
+    private String ConstruirVentaDirectoEnRequest(ComboBox<String> cbCliente, ComboBox<TipoDePago> cbEstado,
+            TextField tfObs, VBox contLineas) {
 
         // 1) Nombre (cliente/mesa/empresa)
         String nombre = cbCliente.getEditor().getText();
@@ -538,6 +621,7 @@ public class Agregar {
 
         // 2) Estado y observaciones -> directo a VentaRequest
         venta.setEstado(cbEstado.getValue());
+
         venta.setObservaciones(tfObs.getText() == null ? "" : tfObs.getText().trim());
 
         // 3) Asegurar listas y limpiarlas
@@ -561,13 +645,6 @@ public class Agregar {
                 });
             }
         }
-
-        // (Logs opcionales)
-        System.out.println("DEBUG(Agregar) venta.idProductos=" + venta.getIdProductos());
-        System.out.println("DEBUG(Agregar) venta.cantidades=" + venta.getCantidades());
-        System.out.println("DEBUG(Agregar) venta.estado=" + venta.getEstado());
-        System.out.println("DEBUG(Agregar) venta.observaciones=" + venta.getObservaciones());
-
         // 5) El diálogo devuelve SOLO el nombre; Ventas resuelve idCliente y hace el POST
         return nombreLimpio;
     }

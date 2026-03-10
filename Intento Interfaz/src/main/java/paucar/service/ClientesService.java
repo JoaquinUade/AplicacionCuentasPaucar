@@ -23,15 +23,25 @@ public class ClientesService {
     private final VentaRequest venta;
 
     public ClientesService(String BASE_URL, VentaRequest venta) {
-        this.BASE_URL = Objects.requireNonNull(BASE_URL);
-        this.http = HttpClient.newHttpClient();
-        this.TraductorJSON = new ObjectMapper();
-        this.venta = Objects.requireNonNull(venta, "venta (VentaRequest) no puede ser null");
+        this.BASE_URL = Objects.requireNonNull(BASE_URL);/*/*si la URL que me pasaste existe y no es nula,
+                                                         la guardo; si es nula, te aviso enseguida porque
+                                                         no puedo trabajar sin eso*/
+        this.http = HttpClient.newHttpClient();/*/*Creame una herramienta para poder hacer llamadas al
+                                               backend (como GET y POST) y guardámela para usarla cada
+                                               vez que necesite hablar con la API*/
+        this.TraductorJSON = new ObjectMapper();/*Creame un traductor que convierta JSON a objetos Java y
+                                                objetos Java a JSON, porque lo voy a necesitar cada vez
+                                                que hable con el backend */
+        this.venta = Objects.requireNonNull(venta, "venta (VentaRequest) no puede ser null");/*Guardá la venta que me pasaste, pero antes asegurate
+                                                                                                      de que no sea nula; si viene nula, frená todo y avisame
+                                                                                                      con un error claro */
 
-        if (this.venta.getIdProductos() == null) {
+        if (this.venta.getIdProductos() == null) {/*Si las listas de productos no existen crealas vacías
+                                                  ahora  para que todo siga funcionando. Una lista vacía
+                                                  es segura; una null hace explotar el programa*/
             this.venta.setIdProductos(new ArrayList<>());
         }
-        if (this.venta.getCantidades() == null) {
+        if (this.venta.getCantidades() == null) {/*lo mismo con las cantidades*/
             this.venta.setCantidades(new ArrayList<>());
         }
     }
@@ -54,8 +64,9 @@ public class ClientesService {
                                                                               entonces todo salió bien */
 
                 var json = TraductorJSON.readTree(response.body());/*Toma el texto que vino del servidor
-                                                                   (normalmente JSON) y lo convierte en un objeto
-                                                                   JSON que podés leer por campos. */
+                                                                   (normalmente  string JSON) y lo
+                                                                   convierte en un objeto (un árbol JSON) 
+                                                                   JSON que podés leer por campos*/
                 var out = new ArrayList<String>();
 
                 if (json.isArray()) {/*Verifica que 'json' sea un vector */
@@ -192,5 +203,23 @@ public class ClientesService {
             return null;
         }
         return null;
+    }
+    public static TipoCliente deducirTipoCliente(String nombre) {
+        if (nombre == null) {/*si el nombre es null */
+            return TipoCliente.CLIENTE;/*asumo que es un cliente */
+        }
+        String n = nombre.trim().toLowerCase();/*le quita los espacio en blanco del principio y final del
+                                               nombre y lo pasa a minuscula para facilitar las
+                                               comparaciones */
+
+        if (n.startsWith("mesa ")) {/*revisa si el nombre empieza con "mesa " */
+            return TipoCliente.MESA;/*si es asi asume que es unamesa */
+        }
+
+        if (n.contains(" srl") || n.endsWith(" srl") || n.contains(" s.a") || n.contains(" sa")/*cambiar esto */
+                || n.contains("empresa") || n.contains("estudio") || n.contains("industria")) {
+            return TipoCliente.EMPRESA;
+        }
+        return TipoCliente.CLIENTE;
     }
 }
