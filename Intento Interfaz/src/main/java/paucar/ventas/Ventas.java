@@ -381,35 +381,66 @@ public final class Ventas extends BorderPane {
     // =========================================================================================
     // Sección: Cargas asíncronas y backend
     // =========================================================================================
-    private void cargarClientesAsync() {
+    private void cargarClientesAsync() {/*este método se encarga de cargar la lista de clientes desde el
+                                        backend sin trabar la interfaz gráfica (UI)*/
         CompletableFuture
-                .supplyAsync(() -> clientesService.obtenerTodosLosClientesMenosMesas())
-                .thenAccept(lista -> Platform.runLater(() -> clientes.setAll(lista)));
+                .supplyAsync(() -> clientesService.obtenerTodosLosClientesMenosMesas())/*ejecuta el método obtenerTodosLosClientesMenosMesas()
+                                                                                       en segundo plano para no bloquear la UI mientras se
+                                                                                       carga la lista de clientes desde el backend*/
+
+                .thenAccept(lista -> Platform.runLater(() -> clientes.setAll(lista)));/*recibe la lista de clientes que devolvió la operación
+                                                                                      asíncrona, la coloca en la variable lista para poder
+                                                                                      usarla dentro del bloque, y luego actualiza la lista 
+                                                                                      observable de la UI con ese contenido usando Platform.runLater*/
     }
 
-    private void cargarProductosAsync() {
+    private void cargarProductosAsync() {/*carga los productos en segundo plano para evitar trabar la UI */
         CompletableFuture
-                .supplyAsync(productosService::cargarProductos) // List<ProductosService.ProductoItem>
-                .thenAccept(items -> Platform.runLater(() -> productos.setAll(items)));
+                .supplyAsync(productosService::cargarProductos)/*Ejecuta el método cargarProductos de productosService en un
+                                                               hilo en segundo plano (asincrónicamente) y produce un
+                                                               CompletableFuture con la lista de productos que ese método devuelve */
+
+                .thenAccept(items -> Platform.runLater(() -> productos.setAll(items)));/*Cuando termina la carga asíncrona de productos, 
+                                                                                       esta línea recibe ese resultado en la variable items
+                                                                                       y, usando Platform.runLater, actualiza la ObservableList
+                                                                                       productos de la UI con esos ítems */
     }
 
     public void recargarDelBackend() {
         CompletableFuture /*CompletableFuture es una herramienta de Java que te permite ejecutar código en
                           segundo plano sin trabar la interfaz gráfica (UI)*/
-                .supplyAsync(() -> backend.cargarVentasDelDia(LocalDate.now()))/* hago la carga de ventas
-                                                                               de hoy en segundo plano para
-                                                                               no trabar la UI */
-                .thenAccept(lista -> Platform.runLater(() -> {
-            var nuevas = FXCollections.<Fila>observableArrayList();
-            for (java.util.Map<String, Object> dto : lista) {
-                Fila f = new Fila();
-                f.setNombre((String) dto.getOrDefault("nombre", ""));
+
+                .supplyAsync(() -> backend.cargarVentasDelDia(LocalDate.now()))/*Ejecuta en segundo plano el cargarVentasDelDia
+                                                                                del backend, pasándole la fecha de hoy
+                                                                                (LocalDate.now()), para obtener la lista de
+                                                                                ventas del día sin trabar la UI*/
+
+                .thenAccept(lista -> Platform.runLater(() -> {/*cuando termine la operación asíncrona anterior y se
+                                                              obtenga la lista, se ejecutará el siguiente bloque de
+                                                              código usando Platform.runLater para actualizar la
+                                                              interfaz gráfica */
+
+            var nuevas = FXCollections.<Fila>observableArrayList();/*Crea una lista VACÍA que va a contener objetos Fila,
+                                                                   será usada para construir el NUEVO contenido de la
+                                                                   tabla antes de reemplazar lo que está actualmente en pantalla*/
+
+            for (java.util.Map<String, Object> dto : lista) {/*Recorre cada elemento de lista con dto*/
+
+                Fila f = new Fila();/*Esa línea crea un objeto nuevo de tipo Fila, o sea, crea un NUEVO
+                                     renglón para la tabla */
+                f.setNombre((String) dto.getOrDefault("nombre", ""));/*Tomá del mapa dto el valor de la clave "nombre" (o "" si no existe), 
+                                                                                       convertí ese valor a String y ponelo en el campo nombre de la Fila f */
                 f.setDescripcion((String) dto.getOrDefault("descripcion", ""));
-                f.setMonto((java.math.BigDecimal) dto.getOrDefault("monto", java.math.BigDecimal.ZERO));
+                f.setMonto((java.math.BigDecimal) dto.getOrDefault("monto", java.math.BigDecimal.ZERO));/*Obtiene del mapa dto el valor asociado a la clave
+                                                                                                            "monto" (o BigDecimal.ZERO si no está), lo castea a
+                                                                                                            BigDecimal y lo asigna al campo monto de la Fila f */
                 f.setEstado((com.uade.tpo.demo.entity.TipoDePago) dto.getOrDefault(
-                        "estado", com.uade.tpo.demo.entity.TipoDePago.DEBE));
+                        "estado", com.uade.tpo.demo.entity.TipoDePago.DEBE));/*Toma del mapa dto el valor de la clave "estado" (si existe), y si falta usa
+                                                                                  TipoDePago.DEBE como valor por defecto; luego convierte ese valor al tipo
+                                                                                  TipoDePago y se lo asigna al campo estado de la Fila f */
                 f.setObservaciones((String) dto.getOrDefault("observaciones", ""));
-                nuevas.add(f);
+                nuevas.add(f);/*Agrega la fila f (que acabás de construir con los datos de una venta)
+                              dentro de la lista nuevas */
             }
 
             RenglonDeLaTabla.setAll(nuevas);
