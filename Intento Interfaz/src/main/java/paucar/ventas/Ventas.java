@@ -387,7 +387,6 @@ public final class Ventas extends BorderPane {
                 .supplyAsync(() -> clientesService.obtenerTodosLosClientesMenosMesas())/*ejecuta el método obtenerTodosLosClientesMenosMesas()
                                                                                        en segundo plano para no bloquear la UI mientras se
                                                                                        carga la lista de clientes desde el backend*/
-
                 .thenAccept(lista -> Platform.runLater(() -> clientes.setAll(lista)));/*recibe la lista de clientes que devolvió la operación
                                                                                       asíncrona, la coloca en la variable lista para poder
                                                                                       usarla dentro del bloque, y luego actualiza la lista 
@@ -399,7 +398,6 @@ public final class Ventas extends BorderPane {
                 .supplyAsync(productosService::cargarProductos)/*Ejecuta el método cargarProductos de productosService en un
                                                                hilo en segundo plano (asincrónicamente) y produce un
                                                                CompletableFuture con la lista de productos que ese método devuelve */
-
                 .thenAccept(items -> Platform.runLater(() -> productos.setAll(items)));/*Cuando termina la carga asíncrona de productos, 
                                                                                        esta línea recibe ese resultado en la variable items
                                                                                        y, usando Platform.runLater, actualiza la ObservableList
@@ -409,12 +407,10 @@ public final class Ventas extends BorderPane {
     public void recargarDelBackend() {
         CompletableFuture /*CompletableFuture es una herramienta de Java que te permite ejecutar código en
                           segundo plano sin trabar la interfaz gráfica (UI)*/
-
                 .supplyAsync(() -> backend.cargarVentasDelDia(LocalDate.now()))/*Ejecuta en segundo plano el cargarVentasDelDia
                                                                                 del backend, pasándole la fecha de hoy
                                                                                 (LocalDate.now()), para obtener la lista de
                                                                                 ventas del día sin trabar la UI*/
-
                 .thenAccept(lista -> Platform.runLater(() -> {/*cuando termine la operación asíncrona anterior y se
                                                               obtenga la lista, se ejecutará el siguiente bloque de
                                                               código usando Platform.runLater para actualizar la
@@ -460,9 +456,11 @@ public final class Ventas extends BorderPane {
                                                                           res el Optional con el resultado
                                                                            del usuario */
 
-        res.ifPresent(this::confirmarPedidoAsync);/*Si el usuario confirmó el pedido usando el boton
-                                                  confirmar, llamar a confirmarPedidoAsync con el valor
-                                                  devuelto; si canceló, no hacer nada */
+        res.ifPresent(nombre -> {
+            var tipo = dlg.getTipoSeleccionado();
+            confirmarPedidoAsync(nombre, tipo);
+
+        });
     }
 
     // =========================================================================================
@@ -510,8 +508,7 @@ public final class Ventas extends BorderPane {
         }
     }
 
-    private void confirmarPedidoAsync(String nombreCliente) {
-        TipoCliente tipo = ClientesService.deducirTipoCliente(nombreCliente);
+    private void confirmarPedidoAsync(String nombreCliente, TipoCliente tipo) {
 
         // 1) Tomar COPIAS defensivas de las listas del VentaRequest
         java.util.List<Long> ids = new java.util.ArrayList<>(venta.getIdProductos());
@@ -532,7 +529,6 @@ public final class Ventas extends BorderPane {
             return;
         }
 
-        // 3) Cliente/Empresa: crear si no existe, obtener id y guardar usando las COPIAS
         java.util.concurrent.CompletableFuture
                 .runAsync(() -> clientesService.crearClienteSiNoExiste(nombreCliente, tipo))
                 .thenCompose(v -> java.util.concurrent.CompletableFuture.supplyAsync(
@@ -549,8 +545,8 @@ public final class Ventas extends BorderPane {
                         return java.util.concurrent.CompletableFuture.completedFuture(false);
                     }
                     venta.setIdCliente(idCliente);
-                    return java.util.concurrent.CompletableFuture.supplyAsync(()
-                            -> backend.GuardarPedidos(idCliente, ids, cants, estado, obs)
+                    return java.util.concurrent.CompletableFuture.supplyAsync(
+                            () -> backend.GuardarPedidos(idCliente, ids, cants, estado, obs)
                     );
                 })
                 .thenAccept(ok -> javafx.application.Platform.runLater(() -> {

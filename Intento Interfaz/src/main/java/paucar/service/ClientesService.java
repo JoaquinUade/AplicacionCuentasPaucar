@@ -204,22 +204,4 @@ public class ClientesService {
         }
         return null;
     }
-    public static TipoCliente deducirTipoCliente(String nombre) {
-        if (nombre == null) {/*si el nombre es null */
-            return TipoCliente.CLIENTE;/*asumo que es un cliente */
-        }
-        String n = nombre.trim().toLowerCase();/*le quita los espacio en blanco del principio y final del
-                                               nombre y lo pasa a minuscula para facilitar las
-                                               comparaciones */
-
-        if (n.startsWith("mesa ")) {/*revisa si el nombre empieza con "mesa " */
-            return TipoCliente.MESA;/*si es asi asume que es unamesa */
-        }
-
-        if (n.contains(" srl") || n.endsWith(" srl") || n.contains(" s.a") || n.contains(" sa")/*cambiar esto */
-                || n.contains("empresa") || n.contains("estudio") || n.contains("industria")) {
-            return TipoCliente.EMPRESA;
-        }
-        return TipoCliente.CLIENTE;
-    }
 }
