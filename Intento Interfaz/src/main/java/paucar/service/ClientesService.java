@@ -136,7 +136,7 @@ public class ClientesService {
             }
 
             try {
-                Long id = this.obtenerClienteIdPorNombre(nombre);
+                Long id = this.obtenerClienteIdPorNombre(nombre, tipoCli);/*Intento obtener el ID del cliente que acabo de crear (o que ya existía) para guardarlo en la venta actual, así después puedo usar ese ID para asociar la venta a ese cliente en el backend */
                 if (id != null && this.venta != null) {
                     this.venta.setIdCliente(id);
                 }
@@ -148,156 +148,168 @@ public class ClientesService {
             System.err.println("crearClienteSiNoExiste: " + e.getMessage());
         }
     }
-
-    public Long obtenerClienteIdPorNombre(String nombre) {
-        try {
-            if (nombre == null || nombre.isBlank()) {/*Si el nombre es nulo o está vacío salir del método retornando null */
-                return null;
-            }
-
-            String url = BASE_URL + "/clientes?nombre="/*añade al final de la url que ya teniamos "/clientes?nombre="" */
-                    + URLEncoder.encode(nombre, StandardCharsets.UTF_8);/*codifica la url para que sea valida ya que no acepta ñ o tildes */
-
-            var solicitud = HttpRequest.newBuilder().uri(URI.create(url)).GET().build();/*Arma una solicitud HTTP de tipo GET hacia la URL que construiste, lista para ser enviada */
-            var response = http.send(solicitud, HttpResponse.BodyHandlers.ofString());/*Envía la solicitud HTTP solicitud al servidor y recibe la respuesta completa en response, leyendo el cuerpo como texto (String) */
-
-            if (response.statusCode() >= 200 && response.statusCode() < 300) {/*si el codigo http  esta entre 200 y 300*/
-                var json = TraductorJSON.readTree(response.body());/*Convierte el texto que vino del servidor en
-                                                                   la respuesta (response.body()) a un objeto
-                                                                   JSON (JsonNode) usando Jackson */
-                com.fasterxml.jackson.databind.JsonNode name = null;
-
-                if (json.isArray()) {
-                    String buscado = nombre.trim();
-                    for (com.fasterxml.jackson.databind.JsonNode elem : json) {
-                        if (elem != null && elem.hasNonNull("nombre")) {
-                            String n = elem.get("nombre").asText("").trim();
-                            if (n.equalsIgnoreCase(buscado)) {
-                                name = elem;
-                                break;
-                            }
-                        }
-                    }
-                } else if (json.isObject()) {
-                    name = json;
-                }
-
-                if (name == null) {
-                    return null;
-                }
-                if (name.hasNonNull("idCliente")) {
-                    Long id = name.get("idCliente").asLong();
-                    // >>> INTEGRACIÓN VentaRequest <<<
-                    try {
-                        if (this.venta != null) {
-                            this.venta.setIdCliente(id); // usar VentaRequest
-                        }
-                    } catch (Exception ignore) {
-                        // defensivo: nunca romper el flujo original
-                    }
-                    return id;
-                }
-            }
-        } catch (java.io.IOException | InterruptedException e) {
-            System.err.println("obtenerClienteIdPorNombre (general): " + e.getMessage());
+public Long obtenerClienteIdPorNombre(String nombre, TipoCliente tipo) {
+    try {
+        if (nombre == null || nombre.isBlank() || tipo == null) {
             return null;
         }
-        return null;
-    }
-    public java.util.List<String> obtenerNombresPorTipo(com.uade.tpo.demo.entity.TipoCliente tipo) {
-    if (tipo == null) return java.util.List.of();
 
-    try {
-        // 1) Intento con ?tipoCliente=TIPO
-        String url = BASE_URL + "/clientes?tipoCliente="
-                + java.net.URLEncoder.encode(tipo.name(), java.nio.charset.StandardCharsets.UTF_8);
-        var req = java.net.http.HttpRequest.newBuilder()
-                .uri(java.net.URI.create(url))
+        String url = BASE_URL + "/clientes?nombre="
+                + URLEncoder.encode(nombre, StandardCharsets.UTF_8)
+                + "&tipoCliente="  // <- OJO: '&' literal (no &amp;)
+                + URLEncoder.encode(tipo.name(), StandardCharsets.UTF_8);
+
+        var solicitud = HttpRequest.newBuilder()
+                .uri(URI.create(url))
                 .GET()
                 .build();
-        var res = http.send(req, java.net.http.HttpResponse.BodyHandlers.ofString());
 
-        if (res.statusCode() >= 200 && res.statusCode() < 300) {
-            var json = TraductorJSON.readTree(res.body());
-            var out = new java.util.ArrayList<String>();
+        var response = http.send(solicitud, HttpResponse.BodyHandlers.ofString());
+
+        if (response.statusCode() >= 200 && response.statusCode() < 300) {
+            var json = TraductorJSON.readTree(response.body());
+
+            com.fasterxml.jackson.databind.JsonNode match = null; // <- declarar una sola variable
 
             if (json.isArray()) {
-                for (var n : json) {
-                    String nombre = n.hasNonNull("nombre") ? n.get("nombre").asText() : null;
-                    String tipoStr = n.hasNonNull("tipoCliente") ? n.get("tipoCliente").asText() : null;
-
-                    if (nombre != null && !nombre.isBlank()) {
-                        if (tipoStr == null) {
-                            // No vino el campo tipoCliente para este ítem: lo evaluamos luego
-                            out.add(nombre.trim());
-                        } else if (tipoStr.equalsIgnoreCase(tipo.name())) {
-                            out.add(nombre.trim());
+                String buscado = nombre.trim();
+                for (com.fasterxml.jackson.databind.JsonNode elem : json) {
+                    if (elem != null && elem.hasNonNull("nombre")) {
+                        String n = elem.get("nombre").asText("").trim();
+                        String t = elem.hasNonNull("tipoCliente") ? elem.get("tipoCliente").asText("") : "";
+                        // Coincidencia por nombre y tipo (case-insensitive)
+                        if (n.equalsIgnoreCase(buscado) && t.equalsIgnoreCase(tipo.name())) {
+                            match = elem;
+                            break;
                         }
                     }
                 }
             } else if (json.isObject()) {
-                String nombre = json.hasNonNull("nombre") ? json.get("nombre").asText() : null;
-                String tipoStr = json.hasNonNull("tipoCliente") ? json.get("tipoCliente").asText() : null;
-
-                if (nombre != null && !nombre.isBlank()) {
-                    if (tipoStr == null || tipoStr.equalsIgnoreCase(tipo.name())) {
-                        out.add(nombre.trim());
-                    }
+                String n = json.hasNonNull("nombre") ? json.get("nombre").asText("").trim() : "";
+                String t = json.hasNonNull("tipoCliente") ? json.get("tipoCliente").asText("") : "";
+                if (n.equalsIgnoreCase(nombre.trim()) && t.equalsIgnoreCase(tipo.name())) {
+                    match = json;
                 }
             }
 
-            // Si NINGÚN elemento traía campo tipoCliente, asumimos que el backend ya filtró.
-            // Si AL MENOS uno traía el campo, ya filtramos arriba por coincidencia exacta.
-            return out.stream()
-                    .distinct()
-                    .sorted(String.CASE_INSENSITIVE_ORDER)
-                    .collect(java.util.stream.Collectors.toList());
+            if (match != null && match.hasNonNull("idCliente")) {
+                Long id = match.get("idCliente").asLong();
+                // Integración con VentaRequest (como ya hacías)
+                try {
+                    if (this.venta != null) {
+                        this.venta.setIdCliente(id);
+                    }
+                } catch (Exception ignore) {}
+                return id;
+            }
+        }
+    } catch (java.io.IOException | InterruptedException e) {
+        System.err.println("obtenerClienteIdPorNombre(nombre,tipo): " + e.getMessage());
+        if (e instanceof InterruptedException) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    // Sin fallback a la versión 1-parámetro para evitar confundir "Victoria CLIENTE" con "Victoria EMPRESA".
+    return null;
+}
+
+    public java.util.List<String> obtenerNombresPorTipo(com.uade.tpo.demo.entity.TipoCliente tipo) {
+        if (tipo == null) {
+            return java.util.List.of();
         }
 
-        // 2) Fallback: pedir todos y filtrar por el campo 'tipoCliente'
-        String urlAll = BASE_URL + "/clientes";
-        var reqAll = java.net.http.HttpRequest.newBuilder()
-                .uri(java.net.URI.create(urlAll))
-                .GET()
-                .build();
-        var resAll = http.send(reqAll, java.net.http.HttpResponse.BodyHandlers.ofString());
+        try {
+            // 1) Intento con ?tipoCliente=TIPO
+            String url = BASE_URL + "/clientes?tipoCliente="
+                    + java.net.URLEncoder.encode(tipo.name(), java.nio.charset.StandardCharsets.UTF_8);
+            var req = java.net.http.HttpRequest.newBuilder()
+                    .uri(java.net.URI.create(url))
+                    .GET()
+                    .build();
+            var res = http.send(req, java.net.http.HttpResponse.BodyHandlers.ofString());
 
-        if (resAll.statusCode() >= 200 && resAll.statusCode() < 300) {
-            var json = TraductorJSON.readTree(resAll.body());
-            var out = new java.util.ArrayList<String>();
+            if (res.statusCode() >= 200 && res.statusCode() < 300) {
+                var json = TraductorJSON.readTree(res.body());
+                var out = new java.util.ArrayList<String>();
 
-            if (json.isArray()) {
-                for (var n : json) {
-                    String nombre = n.hasNonNull("nombre") ? n.get("nombre").asText() : null;
-                    String tipoStr = n.hasNonNull("tipoCliente") ? n.get("tipoCliente").asText() : null;
+                if (json.isArray()) {
+                    for (var n : json) {
+                        String nombre = n.hasNonNull("nombre") ? n.get("nombre").asText() : null;
+                        String tipoStr = n.hasNonNull("tipoCliente") ? n.get("tipoCliente").asText() : null;
+
+                        if (nombre != null && !nombre.isBlank()) {
+                            if (tipoStr == null) {
+                                // No vino el campo tipoCliente para este ítem: lo evaluamos luego
+                                out.add(nombre.trim());
+                            } else if (tipoStr.equalsIgnoreCase(tipo.name())) {
+                                out.add(nombre.trim());
+                            }
+                        }
+                    }
+                } else if (json.isObject()) {
+                    String nombre = json.hasNonNull("nombre") ? json.get("nombre").asText() : null;
+                    String tipoStr = json.hasNonNull("tipoCliente") ? json.get("tipoCliente").asText() : null;
+
+                    if (nombre != null && !nombre.isBlank()) {
+                        if (tipoStr == null || tipoStr.equalsIgnoreCase(tipo.name())) {
+                            out.add(nombre.trim());
+                        }
+                    }
+                }
+
+                // Si NINGÚN elemento traía campo tipoCliente, asumimos que el backend ya filtró.
+                // Si AL MENOS uno traía el campo, ya filtramos arriba por coincidencia exacta.
+                return out.stream()
+                        .distinct()
+                        .sorted(String.CASE_INSENSITIVE_ORDER)
+                        .collect(java.util.stream.Collectors.toList());
+            }
+
+            // 2) Fallback: pedir todos y filtrar por el campo 'tipoCliente'
+            String urlAll = BASE_URL + "/clientes";
+            var reqAll = java.net.http.HttpRequest.newBuilder()
+                    .uri(java.net.URI.create(urlAll))
+                    .GET()
+                    .build();
+            var resAll = http.send(reqAll, java.net.http.HttpResponse.BodyHandlers.ofString());
+
+            if (resAll.statusCode() >= 200 && resAll.statusCode() < 300) {
+                var json = TraductorJSON.readTree(resAll.body());
+                var out = new java.util.ArrayList<String>();
+
+                if (json.isArray()) {
+                    for (var n : json) {
+                        String nombre = n.hasNonNull("nombre") ? n.get("nombre").asText() : null;
+                        String tipoStr = n.hasNonNull("tipoCliente") ? n.get("tipoCliente").asText() : null;
+
+                        if (nombre != null && !nombre.isBlank() && tipoStr != null
+                                && tipoStr.equalsIgnoreCase(tipo.name())) {
+                            out.add(nombre.trim());
+                        }
+                    }
+                } else if (json.isObject()) {
+                    String nombre = json.hasNonNull("nombre") ? json.get("nombre").asText() : null;
+                    String tipoStr = json.hasNonNull("tipoCliente") ? json.get("tipoCliente").asText() : null;
 
                     if (nombre != null && !nombre.isBlank() && tipoStr != null
                             && tipoStr.equalsIgnoreCase(tipo.name())) {
                         out.add(nombre.trim());
                     }
                 }
-            } else if (json.isObject()) {
-                String nombre = json.hasNonNull("nombre") ? json.get("nombre").asText() : null;
-                String tipoStr = json.hasNonNull("tipoCliente") ? json.get("tipoCliente").asText() : null;
 
-                if (nombre != null && !nombre.isBlank() && tipoStr != null
-                        && tipoStr.equalsIgnoreCase(tipo.name())) {
-                    out.add(nombre.trim());
-                }
+                return out.stream()
+                        .distinct()
+                        .sorted(String.CASE_INSENSITIVE_ORDER)
+                        .collect(java.util.stream.Collectors.toList());
             }
 
-            return out.stream()
-                    .distinct()
-                    .sorted(String.CASE_INSENSITIVE_ORDER)
-                    .collect(java.util.stream.Collectors.toList());
+        } catch (java.io.IOException | InterruptedException e) {
+            System.err.println("obtenerNombresPorTipo: " + e.getMessage());
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
         }
-
-    } catch (java.io.IOException | InterruptedException e) {
-        System.err.println("obtenerNombresPorTipo: " + e.getMessage());
-        if (e instanceof InterruptedException) {
-            Thread.currentThread().interrupt();
-        }
+        return java.util.List.of();
     }
-    return java.util.List.of();
-}
 }

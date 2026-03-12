@@ -150,7 +150,7 @@ public class VentasBackend {
         }
 
         // Resolver ID de mesa usando el ClientesService INYECTADO
-        Long idMesa = clientesService.obtenerClienteIdPorNombre(nombreMesa);
+        Long idMesa = clientesService.obtenerClienteIdPorNombre(nombreMesa, TipoCliente.MESA);
         if (idMesa == null) {
             System.err.println("Mesa no encontrada: " + nombreMesa);
             return false;

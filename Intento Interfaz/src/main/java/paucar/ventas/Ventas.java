@@ -530,26 +530,33 @@ public final class Ventas extends BorderPane {
         }
 
         java.util.concurrent.CompletableFuture
-                .runAsync(() -> clientesService.crearClienteSiNoExiste(nombreCliente, tipo))
-                .thenCompose(v -> java.util.concurrent.CompletableFuture.supplyAsync(
-                () -> clientesService.obtenerClienteIdPorNombre(nombreCliente)))
-                .thenCompose(idCliente -> {
-                    if (idCliente == null) {
-                        javafx.application.Platform.runLater(() -> {
-                            var dlg = new javafx.scene.control.Alert(javafx.scene.control.Alert.AlertType.WARNING);
-                            dlg.setTitle("Cliente no encontrado");
-                            dlg.setHeaderText("No se pudo obtener el ID del cliente");
-                            dlg.setContentText("Verificá el nombre del cliente o volvé a intentar.");
-                            dlg.showAndWait();
-                        });
-                        return java.util.concurrent.CompletableFuture.completedFuture(false);
-                    }
-                    venta.setIdCliente(idCliente);
-                    return java.util.concurrent.CompletableFuture.supplyAsync(
-                            () -> backend.GuardarPedidos(idCliente, ids, cants, estado, obs)
-                    );
-                })
-                .thenAccept(ok -> javafx.application.Platform.runLater(() -> {
+        .supplyAsync(() -> {
+            // 1) Asegurar que exista el cliente con el TIPO correcto
+            clientesService.crearClienteSiNoExiste(nombreCliente, tipo);
+
+            // 2) Obtener el id del cliente filtrando por (nombre, tipo)
+            return clientesService.obtenerClienteIdPorNombre(nombreCliente, tipo);
+        })
+        .thenCompose(idCliente -> {
+            if (idCliente == null) {
+                javafx.application.Platform.runLater(() -> {
+                    var dlg = new javafx.scene.control.Alert(javafx.scene.control.Alert.AlertType.WARNING);
+                    dlg.setTitle("Cliente no encontrado");
+                    dlg.setHeaderText("No se pudo obtener el ID del cliente");
+                    dlg.setContentText("Verificá el nombre del cliente o volvé a intentar.");
+                    dlg.showAndWait();
+                });
+                return java.util.concurrent.CompletableFuture.completedFuture(false);
+            }
+
+            venta.setIdCliente(idCliente);
+
+            // 3) Guardar el/los pedidos
+            return java.util.concurrent.CompletableFuture.supplyAsync(
+                    () -> backend.GuardarPedidos(idCliente, ids, cants, estado, obs)
+            );
+        })
+        .thenAccept(ok -> javafx.application.Platform.runLater(() -> {
             if (ok) {
                 if (!clientes.contains(nombreCliente)) {
                     clientes.add(nombreCliente);
