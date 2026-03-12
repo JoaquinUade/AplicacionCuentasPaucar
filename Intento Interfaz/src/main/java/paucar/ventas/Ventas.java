@@ -447,7 +447,7 @@ public final class Ventas extends BorderPane {
     private void VentanaAgregarPedido() {/*este metodo es el que se ejecuta cuando tocás el botón “+ Agregar”
                                         en la pantalla de Ventas */
 
-        var dlg = new Agregar(clientes, productos, venta);/*crea un objeto nuevo de la clase Agregar y le
+        var dlg = new Agregar(clientes, productos, clientesService, venta);/*crea un objeto nuevo de la clase Agregar y le
                                                           pasa clientes, productos y venta al constructor */
 
         var res = dlg.Mostrar(getScene() == null ? null : getScene().getWindow());/*Muestra el diálogo dlg

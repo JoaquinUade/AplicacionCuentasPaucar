@@ -30,6 +30,7 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.stage.Window;
 import javafx.util.StringConverter;
+import paucar.service.ClientesService;
 import paucar.service.ProductosService;
 
 public class Agregar {
@@ -41,12 +42,14 @@ public class Agregar {
     // ====== Datos de trabajo que vienen de Ventas ======
     private final ObservableList<String> clientes; // lista base
     private final ObservableList<ProductosService.ProductoItem> productos; // lista base
+    private final ClientesService clientesService;
     private final VentaRequest venta;
 
     public Agregar(ObservableList<String> clientes,
-            ObservableList<ProductosService.ProductoItem> productos, VentaRequest venta) {
+            ObservableList<ProductosService.ProductoItem> productos, ClientesService clientesService, VentaRequest venta) {
         // Usamos directamente las listas provistas por Ventas
         this.clientes = clientes;
+        this.clientesService = clientesService;
         this.productos = productos;
         this.venta = venta;
     }
@@ -76,7 +79,7 @@ public class Agregar {
         Dialog<String> dialog = new Dialog<>();/*Creá una ventana emergente llamada dialog que, cuando se
                                                cierre presionando ‘Agregar’, va a devolver un texto como
                                                resultado */
-                                               
+
         dialog.setTitle("Agregar pedido");/*nombra a la ventana emergente “Agregar pedido” como
                                                 título en la barra superior */
         dialog.setResizable(true);
@@ -84,27 +87,8 @@ public class Agregar {
         ButtonType okType = new ButtonType("Agregar", ButtonBar.ButtonData.OK_DONE);
         dialog.getDialogPane().getButtonTypes().addAll(okType, ButtonType.CANCEL);
 
-        FilteredList<String> clientesFiltrados = new FilteredList<>(clientes, s -> true);
-        ComboBox<String> cbCliente = crearComboClientes(clientesFiltrados);
-
-        // --- Productos (líneas dinámicas) ---
-        VBox contLineas = new VBox(6);
-        contLineas.setPadding(new Insets(6));
-
-        Button btnAgregarLinea = new Button("+ Producto");
-        btnAgregarLinea.getStyleClass().add("btn-primary");
-        btnAgregarLinea.setOnAction(e -> contLineas.getChildren().add(crearLineaProducto(contLineas)));
-
-        // Al menos una línea inicial
-        contLineas.getChildren().add(crearLineaProducto(contLineas));
-
-        // --- Estado y observaciones ---
-        ComboBox<TipoDePago> cbEstado = crearComboEstado();
-        TextField tfObs = TextFieldObservaciones();
-
-// --- NUEVO: selector tipo cliente (Mesa - Cliente - Empresa) ---
+        // --- 1) Selector tipo cliente (Mesa - Cliente - Empresa) ---
         ToggleGroup tgTipoCliente = new ToggleGroup();
-
         ToggleButton btnMesa = new ToggleButton("Mesa");
         ToggleButton btnCliente = new ToggleButton("Cliente");
         ToggleButton btnEmpresa = new ToggleButton("Empresa");
@@ -124,65 +108,141 @@ public class Agregar {
         HBox selectorTipoCliente = new HBox(6, btnMesa, btnCliente, btnEmpresa);
         selectorTipoCliente.setAlignment(Pos.CENTER_LEFT);
 
-        // (Opcional) estilos simples para que se vea “segmentado”
+        // (Opcional) estilos de “segmentado”
         btnMesa.getStyleClass().add("segmented-left");
         btnCliente.getStyleClass().add("segmented-center");
         btnEmpresa.getStyleClass().add("segmented-right");
 
-        // --- Layout ---
+        // --- 2) Combo de clientes (tu autocompletar por texto se mantiene)
+        FilteredList<String> clientesFiltrados = new FilteredList<>(clientes, s -> true);
+        ComboBox<String> cbCliente = crearComboClientes(clientesFiltrados);
+
+        // --- 3) CARGA INICIAL según el tipo seleccionado (por defecto CLIENTE) ---
+        if (tgTipoCliente.getSelectedToggle() != null && clientesService != null) {
+            var tipo = (TipoCliente) tgTipoCliente.getSelectedToggle().getUserData();
+            cbCliente.setDisable(true);
+
+            new Thread(() -> {
+                java.util.List<String> nombres;
+                try {
+                    // Consulta al backend (ya ordena y de-duplica en tu servicio)
+                    nombres = clientesService.obtenerNombresPorTipo(tipo);
+                } catch (Exception ex) {
+                    System.err.println("Carga inicial nombres por tipo: " + ex.getMessage());
+                    nombres = java.util.List.of(); // fallback
+                }
+                final java.util.List<String> nombresFinal = nombres;
+
+                Platform.runLater(() -> {
+                    System.out.println("[Agregar] " + tipo + " => " + nombresFinal.size());
+                    // Reemplaza la lista base: desde acá el FilteredList filtra por texto como siempre
+                    clientes.setAll(nombresFinal);
+
+                    // Reaplico tu predicate de texto actual (autocompletar)
+                    String txt = cbCliente.getEditor().getText();
+                    String lower = (txt == null ? "" : txt.trim().toLowerCase());
+                    clientesFiltrados.setPredicate(s -> s != null && (lower.isEmpty() || s.toLowerCase().contains(lower)));
+
+                    cbCliente.setDisable(false);
+                });
+            }, "cargar-clientes-inicial").start();
+        }
+
+        // --- 4) RECARGA al cambiar el TipoCliente (Mesa/Cliente/Empresa) ---
+        tgTipoCliente.selectedToggleProperty().addListener((o, a, b) -> {
+            if (b == null || clientesService == null) {
+                return;
+            }
+
+            var tipo = (TipoCliente) b.getUserData();
+            cbCliente.setDisable(true);
+
+            new Thread(() -> {
+                java.util.List<String> nombres;
+                try {
+                    nombres = clientesService.obtenerNombresPorTipo(tipo);
+                } catch (Exception ex) {
+                    System.err.println("Carga nombres por tipo: " + ex.getMessage());
+                    nombres = java.util.List.of(); // fallback
+                }
+                final java.util.List<String> nombresFinal = nombres;
+
+                Platform.runLater(() -> {
+                    String sel = cbCliente.getValue();
+
+                    clientes.setAll(nombresFinal);
+
+                    String txt = cbCliente.getEditor().getText();
+                    String lower = (txt == null ? "" : txt.trim().toLowerCase());
+                    clientesFiltrados.setPredicate(s -> s != null && (lower.isEmpty() || s.toLowerCase().contains(lower)));
+
+                    // Si lo elegido dejó de existir para el nuevo tipo, limpiamos
+                    if (sel != null && !nombresFinal.contains(sel)) {
+                        cbCliente.setValue(null);
+                        cbCliente.getEditor().clear();
+                    }
+
+                    cbCliente.setDisable(false);
+                });
+            }, "cargar-clientes-por-tipo").start();
+        });
+
+        // --- 5) Productos (líneas dinámicas) ---
+        VBox contLineas = new VBox(6);
+        contLineas.setPadding(new Insets(6));
+        Button btnAgregarLinea = new Button("+ Producto");
+        btnAgregarLinea.getStyleClass().add("btn-primary");
+        btnAgregarLinea.setOnAction(e -> contLineas.getChildren().add(crearLineaProducto(contLineas)));
+        contLineas.getChildren().add(crearLineaProducto(contLineas)); // al menos una línea inicial
+
+        // --- 6) Estado y observaciones ---
+        ComboBox<TipoDePago> cbEstado = crearComboEstado();
+        TextField tfObs = TextFieldObservaciones();
+
+        // --- 7) Layout ---
         GridPane grid = buildFormularioPedido(cbCliente, contLineas, btnAgregarLinea, cbEstado, tfObs, selectorTipoCliente);
 
-        // --- Validación del botón OK ---
-        // Tomar referencias de la fila inicial (la que viene por defecto)
+        // --- 8) Validación del botón OK ---
         HBox fila0 = (HBox) contLineas.getChildren().get(0);
         @SuppressWarnings("unchecked")
-        ComboBox<ProductosService.ProductoItem> cbProd0
-                = (ComboBox<ProductosService.ProductoItem>) fila0.getChildren().get(0);
+        ComboBox<ProductosService.ProductoItem> cbProd0 = (ComboBox<ProductosService.ProductoItem>) fila0.getChildren().get(0);
         TextField tfCant0 = (TextField) fila0.getChildren().get(1);
 
         Node okBtn = dialog.getDialogPane().lookupButton(okType);
-
         okBtn.disableProperty().bind(
                 Bindings.createBooleanBinding(
-                        ()
-                        -> // Lo tuyo de antes (nombre y al menos una línea válida)...
-                        BotonAgregarInhabilitado(cbCliente, contLineas)
-                        // ...más: obligar a elegir tipo
+                        () -> BotonAgregarInhabilitado(cbCliente, contLineas)
                         || tgTipoCliente.getSelectedToggle() == null,
                         cbCliente.getEditor().textProperty(),
                         contLineas.getChildren(),
                         cbProd0.valueProperty(),
                         tfCant0.textProperty(),
-                        tgTipoCliente.selectedToggleProperty() // <--- observar el toggle
+                        tgTipoCliente.selectedToggleProperty()
                 )
         );
 
         ScrollPane sp = new ScrollPane(grid);
         sp.setFitToWidth(true);
-        sp.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);      // sin scroll horizontal
-        sp.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);  // aparece scroll vertical si hace falta
-
+        sp.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        sp.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
         dialog.getDialogPane().setContent(sp);
 
-// Opcional pero recomendado: permitir agrandar el diálogo
         dialog.setResizable(true);
         dialog.getDialogPane().setPrefSize(600, 500);
 
         dialog.setResultConverter(btn -> {
             if (btn == okType) {
-                // Si por algún motivo no hay selección, no seguimos (igual el botón está deshabilitado)
                 if (tgTipoCliente.getSelectedToggle() == null) {
                     return null;
                 }
-
-                // Guardar el tipo en el campo de la clase (para que lo lea quien llama)
+                // Guardar el tipo
                 this.tipoSeleccionado = (TipoCliente) tgTipoCliente.getSelectedToggle().getUserData();
-
-                // Construir la venta normalmente (estado, observaciones, productos...) y devolver el nombre
+                // Construir la venta y devolver el nombre
                 return ConstruirVentaDirectoEnRequest(cbCliente, cbEstado, tfObs, contLineas);
             }
             return null;
         });
+
         return dialog;
     }
 
@@ -552,6 +612,7 @@ public class Agregar {
     }
 
     private boolean BotonAgregarInhabilitado(ComboBox<String> cbCliente, VBox contLineas) {
+        
         String nombre = cbCliente.getEditor().getText();/*Guarda en la variable nombre el texto que el
                                                          usuario escribió en el ComboBox cbCliente */
         boolean nombreVacio = (nombre == null || nombre.isBlank()) && cbCliente.getValue() == null;/*guarda en nombrevacio si el nombre no

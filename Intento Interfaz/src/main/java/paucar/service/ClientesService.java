@@ -204,4 +204,100 @@ public class ClientesService {
         }
         return null;
     }
+    public java.util.List<String> obtenerNombresPorTipo(com.uade.tpo.demo.entity.TipoCliente tipo) {
+    if (tipo == null) return java.util.List.of();
+
+    try {
+        // 1) Intento con ?tipoCliente=TIPO
+        String url = BASE_URL + "/clientes?tipoCliente="
+                + java.net.URLEncoder.encode(tipo.name(), java.nio.charset.StandardCharsets.UTF_8);
+        var req = java.net.http.HttpRequest.newBuilder()
+                .uri(java.net.URI.create(url))
+                .GET()
+                .build();
+        var res = http.send(req, java.net.http.HttpResponse.BodyHandlers.ofString());
+
+        if (res.statusCode() >= 200 && res.statusCode() < 300) {
+            var json = TraductorJSON.readTree(res.body());
+            var out = new java.util.ArrayList<String>();
+
+            if (json.isArray()) {
+                for (var n : json) {
+                    String nombre = n.hasNonNull("nombre") ? n.get("nombre").asText() : null;
+                    String tipoStr = n.hasNonNull("tipoCliente") ? n.get("tipoCliente").asText() : null;
+
+                    if (nombre != null && !nombre.isBlank()) {
+                        if (tipoStr == null) {
+                            // No vino el campo tipoCliente para este ítem: lo evaluamos luego
+                            out.add(nombre.trim());
+                        } else if (tipoStr.equalsIgnoreCase(tipo.name())) {
+                            out.add(nombre.trim());
+                        }
+                    }
+                }
+            } else if (json.isObject()) {
+                String nombre = json.hasNonNull("nombre") ? json.get("nombre").asText() : null;
+                String tipoStr = json.hasNonNull("tipoCliente") ? json.get("tipoCliente").asText() : null;
+
+                if (nombre != null && !nombre.isBlank()) {
+                    if (tipoStr == null || tipoStr.equalsIgnoreCase(tipo.name())) {
+                        out.add(nombre.trim());
+                    }
+                }
+            }
+
+            // Si NINGÚN elemento traía campo tipoCliente, asumimos que el backend ya filtró.
+            // Si AL MENOS uno traía el campo, ya filtramos arriba por coincidencia exacta.
+            return out.stream()
+                    .distinct()
+                    .sorted(String.CASE_INSENSITIVE_ORDER)
+                    .collect(java.util.stream.Collectors.toList());
+        }
+
+        // 2) Fallback: pedir todos y filtrar por el campo 'tipoCliente'
+        String urlAll = BASE_URL + "/clientes";
+        var reqAll = java.net.http.HttpRequest.newBuilder()
+                .uri(java.net.URI.create(urlAll))
+                .GET()
+                .build();
+        var resAll = http.send(reqAll, java.net.http.HttpResponse.BodyHandlers.ofString());
+
+        if (resAll.statusCode() >= 200 && resAll.statusCode() < 300) {
+            var json = TraductorJSON.readTree(resAll.body());
+            var out = new java.util.ArrayList<String>();
+
+            if (json.isArray()) {
+                for (var n : json) {
+                    String nombre = n.hasNonNull("nombre") ? n.get("nombre").asText() : null;
+                    String tipoStr = n.hasNonNull("tipoCliente") ? n.get("tipoCliente").asText() : null;
+
+                    if (nombre != null && !nombre.isBlank() && tipoStr != null
+                            && tipoStr.equalsIgnoreCase(tipo.name())) {
+                        out.add(nombre.trim());
+                    }
+                }
+            } else if (json.isObject()) {
+                String nombre = json.hasNonNull("nombre") ? json.get("nombre").asText() : null;
+                String tipoStr = json.hasNonNull("tipoCliente") ? json.get("tipoCliente").asText() : null;
+
+                if (nombre != null && !nombre.isBlank() && tipoStr != null
+                        && tipoStr.equalsIgnoreCase(tipo.name())) {
+                    out.add(nombre.trim());
+                }
+            }
+
+            return out.stream()
+                    .distinct()
+                    .sorted(String.CASE_INSENSITIVE_ORDER)
+                    .collect(java.util.stream.Collectors.toList());
+        }
+
+    } catch (java.io.IOException | InterruptedException e) {
+        System.err.println("obtenerNombresPorTipo: " + e.getMessage());
+        if (e instanceof InterruptedException) {
+            Thread.currentThread().interrupt();
+        }
+    }
+    return java.util.List.of();
+}
 }
