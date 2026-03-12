@@ -24,17 +24,11 @@ import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
-import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
-import javafx.scene.control.TableCell;
-import javafx.scene.control.TableColumn;
-import javafx.scene.control.TableView;
-import javafx.scene.control.cell.TextFieldTableCell;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
-import javafx.scene.layout.VBox;
 import paucar.service.ClientesService;
 import paucar.service.ProductosService;
 import paucar.service.VentasBackend;
@@ -145,10 +139,7 @@ public final class Ventas extends BorderPane {
     private final ObservableList<Fila> RenglonDeLaTabla = FXCollections.observableArrayList();
     private final ObjectProperty<BigDecimal> total = new SimpleObjectProperty<>(BigDecimal.ZERO);
 
-    // ====== Componentes ======
-    private final TableView<Fila> tabla = new TableView<>(RenglonDeLaTabla);
     private final Button btnAgregar = new Button("+ Agregar");
-    private final Button btnQuitar = new Button("Quitar seleccionado");
 
     // ====== Sugerencias (clientes / productos) ======
     private final ObservableList<String> clientes = FXCollections.observableArrayList();
@@ -183,6 +174,26 @@ public final class Ventas extends BorderPane {
     private void initBindings() {
         RenglonDeLaTabla.addListener((javafx.collections.ListChangeListener<Fila>) c -> MontoTotalActual());
     }
+    // importá tu clase nueva arriba:
+// import paucar.ventas.ui.Tabla;
+
+private void cargarClientesAsync() {
+    CompletableFuture
+        .supplyAsync(() -> clientesService.obtenerTodosLosClientesMenosMesas())
+        .thenAccept(lista -> Platform.runLater(() -> clientes.setAll(lista)));
+}
+
+private void cargarProductosAsync() {
+    CompletableFuture
+        .supplyAsync(productosService::cargarProductos)
+        .thenAccept(items -> Platform.runLater(() -> productos.setAll(items)));
+}
+
+private Node crearTabla() {
+    // Le pasás la lista observable y el Locale para formatear el monto de la columna
+    var pane = new Tabla(RenglonDeLaTabla, LOCALE_AR);
+    return pane; // o pane.asNode() si tu clase expone ese método
+}
 
     // =========================================================================================
     // Sección: Header / Tabla / Footer
@@ -215,138 +226,6 @@ public final class Ventas extends BorderPane {
                                                                           + agregar */
         return barra;/*retorna la barra */
     }
-
-    private Node crearTabla() {/*metodo que contruye la tabla visual UI que vemos en ventas */
-        tabla.setEditable(true);/*habilita la edicion de la tabla directamente desde ventas */
-
-        // Columna: Nombre (editable)
-        var colNombre = new TableColumn<Fila, String>("Nombre");
-
-        // ValueFactory ORIGINAL (directo a la propiedad):
-        colNombre.setCellValueFactory(c -> c.getValue().nombreProperty());
-
-        // Celda editable como ya tenías:
-        colNombre.setCellFactory(TextFieldTableCell.forTableColumn());
-        colNombre.setOnEditCommit(e -> e.getRowValue().setNombre(e.getNewValue()));
-        colNombre.setPrefWidth(200);
-
-        // Columna: Descripción (mostrar todo el texto con wrap)
-        var colDesc = new TableColumn<Fila, String>("Descripción");
-        colDesc.setCellValueFactory(c -> c.getValue().descripcionProperty());
-
-        // NUEVO: celda con Text que envuelve (wrap) el contenido
-        colDesc.setCellFactory(col -> new TableCell<Fila, String>() {
-            private final javafx.scene.text.Text text = new javafx.scene.text.Text();
-
-            {
-                // Envolver el texto según el ancho de la columna (restamos un margen)
-                text.wrappingWidthProperty().bind(col.widthProperty().subtract(16));
-                // Dejar que la celda calcule su alto según el contenido
-                setGraphic(text);
-                setPrefHeight(javafx.scene.layout.Region.USE_COMPUTED_SIZE);
-            }
-
-            @Override
-            protected void updateItem(String item, boolean empty) {
-                super.updateItem(item, empty);
-                if (empty || item == null) {
-                    text.setText(null);
-                    setTooltip(null);
-                    setGraphic(null);
-                } else {
-                    text.setText(item);
-                    setGraphic(text);
-
-                    // (Opcional) tooltip con el texto completo
-                    var tip = new javafx.scene.control.Tooltip(item);
-                    setTooltip(tip);
-                }
-            }
-        });
-
-        colDesc.setEditable(false);
-        colDesc.setPrefWidth(420);
-
-        // Columna: Monto (formateado)
-        var colMonto = new TableColumn<Fila, String>("Monto");
-        colMonto.setCellValueFactory(c -> Bindings.createStringBinding(
-                () -> FormatearMonto(c.getValue().getMonto()), c.getValue().montoProperty()));
-        colMonto.setCellFactory(TextFieldTableCell.forTableColumn());
-        colMonto.setEditable(false);
-        colMonto.setPrefWidth(140);
-
-        // Columna: Estado (ComboBox por fila)
-        var colEstado = new TableColumn<Fila, TipoDePago>("Estado");
-        colEstado.setCellValueFactory(c -> c.getValue().estadoProperty());
-        colEstado.setCellFactory(col -> new TableCell<>() {
-            private final ComboBox<TipoDePago> combo = new ComboBox<>();
-
-            {
-                combo.getItems().setAll(TipoDePago.values());
-                combo.valueProperty().addListener((o, a, b) -> {
-                    if (getIndex() >= 0 && getIndex() < getTableView().getItems().size()) {
-                        getTableView().getItems().get(getIndex()).setEstado(b);
-                    }
-                });
-            }
-
-            @Override
-            protected void updateItem(TipoDePago item, boolean empty) {
-                super.updateItem(item, empty);
-                setGraphic(empty ? null : combo);
-                if (!empty) {
-                    combo.setValue(item);
-                }
-            }
-        });
-        colEstado.setPrefWidth(180);
-
-// ⟵ NUEVO: Columna "Observaciones" (wrap + tooltip)
-        var colObs = new TableColumn<Fila, String>("Observaciones");
-        colObs.setCellValueFactory(c -> c.getValue().observacionesProperty());
-        colObs.setCellFactory(col -> new TableCell<Fila, String>() {
-            private final javafx.scene.text.Text text = new javafx.scene.text.Text();
-
-            {
-                text.wrappingWidthProperty().bind(col.widthProperty().subtract(16));
-                setGraphic(text);
-                setPrefHeight(javafx.scene.layout.Region.USE_COMPUTED_SIZE);
-            }
-
-            @Override
-            protected void updateItem(String item, boolean empty) {
-                super.updateItem(item, empty);
-                if (empty || item == null || item.isBlank()) {
-                    text.setText(null);
-                    setTooltip(null);
-                    setGraphic(null);
-                } else {
-                    text.setText(item);
-                    setGraphic(text);
-                    setTooltip(new javafx.scene.control.Tooltip(item));
-                }
-            }
-        });
-        colObs.setPrefWidth(179); // ajustalo al gusto
-
-        // Botón quitar
-        btnQuitar.getStyleClass().add("btn-danger");
-        btnQuitar.disableProperty().bind(Bindings.isNull(tabla.getSelectionModel().selectedItemProperty()));
-        btnQuitar.setOnAction(e -> {
-            var sel = tabla.getSelectionModel().getSelectedItem();
-            if (sel != null) {
-                RenglonDeLaTabla.remove(sel);
-            }
-            MontoTotalActual();
-        });
-
-        tabla.getColumns().setAll(java.util.List.of(colNombre, colDesc, colMonto, colEstado, colObs));
-
-        var cont = new VBox(8, tabla, btnQuitar);
-        VBox.setVgrow(tabla, Priority.ALWAYS);
-        return cont;
-    }
-
     private Node crearFooter() {
         var TituloTotal = new Label("Total:");/*texto del total de la suma de precio de productos */
         TituloTotal.getStyleClass().add("total-titulo");/*crea total-titulo para en algun momento
@@ -376,32 +255,6 @@ public final class Ventas extends BorderPane {
         box.setAlignment(Pos.CENTER_RIGHT);/*posiciona el contenido de box de forma centrada verticalmente */
         box.setPadding(new Insets(10, 0, 0, 0));/*agrega 10 px arriba del contenido */
         return box;/*retorna la box */
-    }
-
-    // =========================================================================================
-    // Sección: Cargas asíncronas y backend
-    // =========================================================================================
-    private void cargarClientesAsync() {/*este método se encarga de cargar la lista de clientes desde el
-                                        backend sin trabar la interfaz gráfica (UI)*/
-        CompletableFuture
-                .supplyAsync(() -> clientesService.obtenerTodosLosClientesMenosMesas())/*ejecuta el método obtenerTodosLosClientesMenosMesas()
-                                                                                       en segundo plano para no bloquear la UI mientras se
-                                                                                       carga la lista de clientes desde el backend*/
-                .thenAccept(lista -> Platform.runLater(() -> clientes.setAll(lista)));/*recibe la lista de clientes que devolvió la operación
-                                                                                      asíncrona, la coloca en la variable lista para poder
-                                                                                      usarla dentro del bloque, y luego actualiza la lista 
-                                                                                      observable de la UI con ese contenido usando Platform.runLater*/
-    }
-
-    private void cargarProductosAsync() {/*carga los productos en segundo plano para evitar trabar la UI */
-        CompletableFuture
-                .supplyAsync(productosService::cargarProductos)/*Ejecuta el método cargarProductos de productosService en un
-                                                               hilo en segundo plano (asincrónicamente) y produce un
-                                                               CompletableFuture con la lista de productos que ese método devuelve */
-                .thenAccept(items -> Platform.runLater(() -> productos.setAll(items)));/*Cuando termina la carga asíncrona de productos, 
-                                                                                       esta línea recibe ese resultado en la variable items
-                                                                                       y, usando Platform.runLater, actualiza la ObservableList
-                                                                                       productos de la UI con esos ítems */
     }
 
     public void recargarDelBackend() {
