@@ -46,6 +46,17 @@ public final class Ventas extends BorderPane {
     private final ClientesService clientesService = new ClientesService(API_BASE, venta);
     private final VentasBackend backend = new VentasBackend(API_BASE, clientesService, venta);
 
+    // ====== Estado de la vista ======
+    private final ObservableList<Fila> RenglonDeLaTabla = FXCollections.observableArrayList();
+    private final ObjectProperty<BigDecimal> total = new SimpleObjectProperty<>(BigDecimal.ZERO);
+
+    private final Button btnAgregar = new Button("+ Agregar");
+
+    // ====== Sugerencias (clientes / productos) ======
+    private final ObservableList<String> clientes = FXCollections.observableArrayList();
+
+    private final ObservableList<ProductosService.ProductoItem> productos = FXCollections.observableArrayList();
+
     // ====== Modelo de Fila (UI de la tabla) ======
     public static class Fila {
 
@@ -135,17 +146,6 @@ public final class Ventas extends BorderPane {
         }
     }
 
-    // ====== Estado de la vista ======
-    private final ObservableList<Fila> RenglonDeLaTabla = FXCollections.observableArrayList();
-    private final ObjectProperty<BigDecimal> total = new SimpleObjectProperty<>(BigDecimal.ZERO);
-
-    private final Button btnAgregar = new Button("+ Agregar");
-
-    // ====== Sugerencias (clientes / productos) ======
-    private final ObservableList<String> clientes = FXCollections.observableArrayList();
-
-    private final ObservableList<ProductosService.ProductoItem> productos = FXCollections.observableArrayList();
-
     // ====== Constructor ======
     public Ventas() {
         setPadding(new Insets(16));
@@ -156,48 +156,40 @@ public final class Ventas extends BorderPane {
         initBindings();
     }
 
-    // =========================================================================================
-    // Inicialización modular
-    // =========================================================================================
     private void initUI() {
-        setTop(crearHeader());
-        setCenter(crearTabla());
-        setBottom(crearFooter());
+        setTop(crearHeader());/*Pone el encabezado en la parte de arriba de la pantalla */
+        setCenter(crearTabla());/*Pone la tabla en la parte central de la pantalla */
+        setBottom(crearFooter());/*Pone el pie de página en la parte de abajo de la pantalla */
     }
 
     private void initAsync() {
-        cargarClientesAsync();
-        cargarProductosAsync();
-        recargarDelBackend();
+        cargarClientesAsync();/*Empieza a cargar la lista de clientes en segundo plano*/
+        cargarProductosAsync();/*Empieza a cargar la lista de productos en segundo plano*/
+        recargarDelBackend();/*Empieza a cargar la tabla con las ventas del día en segundo plano*/
     }
 
     private void initBindings() {
-        RenglonDeLaTabla.addListener((javafx.collections.ListChangeListener<Fila>) c -> MontoTotalActual());
+        RenglonDeLaTabla.addListener((javafx.collections.ListChangeListener<Fila>) c -> MontoTotalActual());/*Cada vez que cambia la tabla (se agrega, quita o
+                                                                                                            modifica una fila), se vuelve a calcular el total */
     }
-    // importá tu clase nueva arriba:
-// import paucar.ventas.ui.Tabla;
 
-private void cargarClientesAsync() {
-    CompletableFuture
-        .supplyAsync(() -> clientesService.obtenerTodosLosClientesMenosMesas())
-        .thenAccept(lista -> Platform.runLater(() -> clientes.setAll(lista)));
-}
+    private void cargarClientesAsync() {
+        CompletableFuture
+                .supplyAsync(() -> clientesService.obtenerTodosLosClientesMenosMesas())
+                .thenAccept(lista -> Platform.runLater(() -> clientes.setAll(lista)));
+    }
 
-private void cargarProductosAsync() {
-    CompletableFuture
-        .supplyAsync(productosService::cargarProductos)
-        .thenAccept(items -> Platform.runLater(() -> productos.setAll(items)));
-}
+    private void cargarProductosAsync() {
+        CompletableFuture
+                .supplyAsync(productosService::cargarProductos)
+                .thenAccept(items -> Platform.runLater(() -> productos.setAll(items)));
+    }
 
-private Node crearTabla() {
-    // Le pasás la lista observable y el Locale para formatear el monto de la columna
-    var pane = new Tabla(RenglonDeLaTabla, LOCALE_AR);
-    return pane; // o pane.asNode() si tu clase expone ese método
-}
+    private Node crearTabla() {
+        var pane = new Tabla(RenglonDeLaTabla, LOCALE_AR);
+        return pane; // o pane.asNode() si tu clase expone ese método
+    }
 
-    // =========================================================================================
-    // Sección: Header / Tabla / Footer
-    // =========================================================================================
     private Node crearHeader() {
         var hoy = LocalDate.now();/*guardamos en la variable hoy la fecha actual */
         var dow = hoy.getDayOfWeek().getDisplayName(TextStyle.FULL, LOCALE_AR).toUpperCase();/*guardamos en
@@ -226,6 +218,7 @@ private Node crearTabla() {
                                                                           + agregar */
         return barra;/*retorna la barra */
     }
+
     private Node crearFooter() {
         var TituloTotal = new Label("Total:");/*texto del total de la suma de precio de productos */
         TituloTotal.getStyleClass().add("total-titulo");/*crea total-titulo para en algun momento
@@ -363,59 +356,68 @@ private Node crearTabla() {
 
     private void confirmarPedidoAsync(String nombreCliente, TipoCliente tipo) {
 
-        // 1) Tomar COPIAS defensivas de las listas del VentaRequest
-        java.util.List<Long> ids = new java.util.ArrayList<>(venta.getIdProductos());
-        java.util.List<Integer> cants = new java.util.ArrayList<>(venta.getCantidades());
-        TipoDePago estado = venta.getEstado();
-        String obs = (venta.getObservaciones() == null ? "" : venta.getObservaciones());
+        java.util.List<Long> ids = new java.util.ArrayList<>(venta.getIdProductos());/*Creá una nueva lista llamada ids(cuyo tipo de dato es long y
+                                                                                     Long es un tipo de dato numérico que sirve para guardar números
+                                                                                     enteros grandes) y copiá dentro todos los números (IDs) que
+                                                                                     vienen de venta.getIdProductos() */
 
-        if (tipo == TipoCliente.MESA) {
-            // 2) Pasar las COPIAS al backend (no las listas internas de 'venta')
-            java.util.concurrent.CompletableFuture
-                    .supplyAsync(() -> backend.GuardarPedidoMesas(nombreCliente, ids, cants, estado, obs))
-                    .thenAccept(ok -> javafx.application.Platform.runLater(() -> {
-                if (ok) {
-                    recargarDelBackend();
+        java.util.List<Integer> cants = new java.util.ArrayList<>(venta.getCantidades());/*Crea una lista nueva que guarda numeros enteros llamada
+                                                                                         cants y copia adentro todas las cantidades que vienen de
+                                                                                         venta.getCantidades() */
 
+        TipoDePago estado = venta.getEstado();/*Creá una variable llamada estado que sea del tipo TipoDePago y guardá ahí
+                                              el valor actual del método de pago de la venta */
+        String obs = (venta.getObservaciones() == null ? "" : venta.getObservaciones());/*guarda en obs el resultado de la condicion, si no es null
+                                                                                        y tiene contenido guarda el contenido, si esta vacio entonces
+                                                                                        guarda vacio*/
+
+        java.util.concurrent.CompletableFuture/*ejecuta en segundo plano */
+
+                .supplyAsync(() -> {/*se asegura de que el cliente exista; si no existe, lo crea */
+                    clientesService.crearClienteSiNoExiste(nombreCliente, tipo);
+
+                    return clientesService.obtenerClienteIdPorNombre(nombreCliente, tipo);/*retorna el ID del cliente que
+                                                                                          tiene ese nombre y ese tipo */
+                 })
+                 .thenCompose(idCliente -> {/*cuando se obtenga el ID del cliente, se ejecutará este bloque de código*/
+
+                    if (idCliente == null) {/*si el id es null */
+                        
+                        javafx.application.Platform.runLater(() -> {/*Mostrar la alerta desde el hilo de la interfaz gráfica (JavaFX)*/
+
+                            var dlg = new javafx.scene.control.Alert(javafx.scene.control.Alert.AlertType.WARNING);/*Creá una ventanita que avise al usuario que pasó algo
+                                                                                                                   importante, pero no grave, y guardala en dlg */
+                            dlg.setTitle("Cliente no encontrado");/*nombra la ventana como cliente no encontrado */
+
+                            dlg.setHeaderText("No se pudo obtener el ID del cliente");/*En la ventanita de advertencia, escribí en grande que no se
+                                                                                                  pudo conseguir el ID del cliente*/
+
+                            dlg.setContentText("Verificá el nombre del cliente o volvé a intentar.");/*Decile al usuario qué tiene que revisar para
+                                                                                                                  arreglar el problema */
+
+                            dlg.showAndWait();/*Mostrá la ventanita y no sigas con el programa hasta que
+                                              el usuario la cierre */
+                        });
+                        return java.util.concurrent.CompletableFuture.completedFuture(false);/*retorna el CompletableFuture<Boolean> cuyo valor es false */
+                    }
+
+                    venta.setIdCliente(idCliente);/*Guardo en venta el ID del cliente */
+
+                    // 3) Guardar el/los pedidos
+                    return java.util.concurrent.CompletableFuture.supplyAsync(/*Retorna un CompletableFuture que después va a
+                                                                              decir si se guardó bien (true) o mal (false)*/
+                            () -> backend.GuardarPedidos(idCliente, ids, cants, estado, obs)
+                    );
+                })
+                .thenAccept(ok -> javafx.application.Platform.runLater(() -> {/*Cuando termine de guardar el pedido y tenga el resultado
+                                                                             decile a JavaFX que ejecute esto en la pantalla*/
+            if (ok) {/*si todo salio bien, (true) */
+                if (!clientes.contains(nombreCliente)) {/*pero el cliente todavia no existe en la lista */
+                    clientes.add(nombreCliente);/*agregalo */
+                    javafx.collections.FXCollections.sort(clientes, String.CASE_INSENSITIVE_ORDER);/*y dejá la lista ordenada */
                 }
-            }));
-            return;
-        }
-
-        java.util.concurrent.CompletableFuture
-        .supplyAsync(() -> {
-            // 1) Asegurar que exista el cliente con el TIPO correcto
-            clientesService.crearClienteSiNoExiste(nombreCliente, tipo);
-
-            // 2) Obtener el id del cliente filtrando por (nombre, tipo)
-            return clientesService.obtenerClienteIdPorNombre(nombreCliente, tipo);
-        })
-        .thenCompose(idCliente -> {
-            if (idCliente == null) {
-                javafx.application.Platform.runLater(() -> {
-                    var dlg = new javafx.scene.control.Alert(javafx.scene.control.Alert.AlertType.WARNING);
-                    dlg.setTitle("Cliente no encontrado");
-                    dlg.setHeaderText("No se pudo obtener el ID del cliente");
-                    dlg.setContentText("Verificá el nombre del cliente o volvé a intentar.");
-                    dlg.showAndWait();
-                });
-                return java.util.concurrent.CompletableFuture.completedFuture(false);
-            }
-
-            venta.setIdCliente(idCliente);
-
-            // 3) Guardar el/los pedidos
-            return java.util.concurrent.CompletableFuture.supplyAsync(
-                    () -> backend.GuardarPedidos(idCliente, ids, cants, estado, obs)
-            );
-        })
-        .thenAccept(ok -> javafx.application.Platform.runLater(() -> {
-            if (ok) {
-                if (!clientes.contains(nombreCliente)) {
-                    clientes.add(nombreCliente);
-                    javafx.collections.FXCollections.sort(clientes, String.CASE_INSENSITIVE_ORDER);
-                }
-                recargarDelBackend();
+                recargarDelBackend();/*recargá la tabla para que aparezca el nuevo pedido que se acaba de
+                                     guardar */
             }
         }));
     }
