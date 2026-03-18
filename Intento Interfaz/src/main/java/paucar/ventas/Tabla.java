@@ -16,15 +16,19 @@ import javafx.scene.control.cell.TextFieldTableCell;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
+import java.util.function.Consumer;
 
+@SuppressWarnings("unused")
 public class Tabla extends VBox {
 
     private final TableView<Ventas.Fila> tabla = new TableView<>();
-    private final Button btnQuitar = new Button("Quitar seleccionado");
+    private final Button btnEliminar = new Button("Eliminar Venta");
+    private final Consumer<Ventas.Fila> onEliminar;
     private final NumberFormat moneda;
 
-    public Tabla(ObservableList<Ventas.Fila> items, Locale locale) {
+    public Tabla(ObservableList<Ventas.Fila> items, Locale locale, Consumer<Ventas.Fila> onEliminar) {
         this.moneda = NumberFormat.getCurrencyInstance(locale);
+        this.onEliminar = onEliminar;
 
         setSpacing(8);
         setPadding(new Insets(0));
@@ -33,17 +37,18 @@ public class Tabla extends VBox {
         tabla.setItems(items);
         tabla.getColumns().setAll(crearColumnas());
 
-        btnQuitar.getStyleClass().add("btn-danger");
-        btnQuitar.disableProperty().bind(Bindings.isNull(tabla.getSelectionModel().selectedItemProperty()));
-        btnQuitar.setOnAction(e -> {
-            var sel = tabla.getSelectionModel().getSelectedItem();
-            if (sel != null) {
-                items.remove(sel); // el listener en Ventas recalcula el total
-            }
-        });
+btnEliminar.disableProperty()
+    .bind(Bindings.isNull(tabla.getSelectionModel().selectedItemProperty()));
+
+btnEliminar.setOnAction(e -> {
+    var sel = tabla.getSelectionModel().getSelectedItem();
+    if (sel != null && onEliminar != null) {
+        onEliminar.accept(sel); // ✅ avisa a Ventas
+    }
+});
 
         VBox.setVgrow(tabla, Priority.ALWAYS);
-        getChildren().addAll(tabla, btnQuitar);
+        getChildren().addAll(tabla, btnEliminar);
     }
 
     private List<TableColumn<Ventas.Fila, ?>> crearColumnas() {

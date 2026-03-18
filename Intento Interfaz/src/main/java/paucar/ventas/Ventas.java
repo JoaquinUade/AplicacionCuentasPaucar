@@ -23,6 +23,7 @@ import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
+import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.layout.BorderPane;
@@ -84,7 +85,8 @@ public final class Ventas extends BorderPane {
                                                                                forma de pago empieza siendo ‘debe’)*/
 
         private final StringProperty observaciones = new SimpleStringProperty("");
-
+        private final ObjectProperty<Long> idVenta = new SimpleObjectProperty<>();/*ObjectProperty que guarda el ID de la venta en el backend,
+                                                                                  para poder eliminarla después si se necesita */
         public String getNombre() {
             return nombre.get();
         }/*retorna el valor que está guardado en el StringProperty nombre*/
@@ -144,6 +146,18 @@ public final class Ventas extends BorderPane {
         public StringProperty observacionesProperty() {
             return observaciones;
         }
+        public Long getIdVenta() {
+            return idVenta.get();
+        }
+
+        public void setIdVenta(Long id) {
+            idVenta.set(id);
+        }
+
+        public ObjectProperty<Long> idVentaProperty() {
+            return idVenta;
+        }
+
     }
 
     // ====== Constructor ======
@@ -186,7 +200,11 @@ public final class Ventas extends BorderPane {
     }
 
     private Node crearTabla() {
-        var pane = new Tabla(RenglonDeLaTabla, LOCALE_AR);
+        var pane = new Tabla(
+                RenglonDeLaTabla,
+                LOCALE_AR,
+                fila -> eliminarVentaDesdeBackend(fila)
+        );
         return pane; // o pane.asNode() si tu clase expone ese método
     }
 
@@ -250,6 +268,26 @@ public final class Ventas extends BorderPane {
         return box;/*retorna la box */
     }
 
+    private void eliminarVentaDesdeBackend(Fila fila) {
+
+        if (fila == null || fila.getIdVenta() == null) {
+            return;
+        }
+
+        CompletableFuture
+                .supplyAsync(() -> backend.eliminarVenta(fila.getIdVenta()))
+                .thenAccept(ok -> Platform.runLater(() -> {
+            if (ok) {
+                recargarDelBackend();
+            } else {
+                new Alert(
+                        Alert.AlertType.ERROR,
+                        "No se pudo eliminar la venta"
+                ).showAndWait();
+            }
+        }));
+    }
+
     public void recargarDelBackend() {
         CompletableFuture /*CompletableFuture es una herramienta de Java que te permite ejecutar código en
                           segundo plano sin trabar la interfaz gráfica (UI)*/
@@ -281,10 +319,13 @@ public final class Ventas extends BorderPane {
                                                                                   TipoDePago.DEBE como valor por defecto; luego convierte ese valor al tipo
                                                                                   TipoDePago y se lo asigna al campo estado de la Fila f */
                 f.setObservaciones((String) dto.getOrDefault("observaciones", ""));
+                
+                f.setIdVenta((Long) dto.get("idVenta"));
+
                 nuevas.add(f);/*Agrega la fila f (que acabás de construir con los datos de una venta)
                               dentro de la lista nuevas */
             }
-
+         
             RenglonDeLaTabla.setAll(nuevas);
             MontoTotalActual();
         }));
@@ -372,17 +413,16 @@ public final class Ventas extends BorderPane {
                                                                                         guarda vacio*/
 
         java.util.concurrent.CompletableFuture/*ejecuta en segundo plano */
-
                 .supplyAsync(() -> {/*se asegura de que el cliente exista; si no existe, lo crea */
                     clientesService.crearClienteSiNoExiste(nombreCliente, tipo);
 
                     return clientesService.obtenerClienteIdPorNombre(nombreCliente, tipo);/*retorna el ID del cliente que
                                                                                           tiene ese nombre y ese tipo */
-                 })
-                 .thenCompose(idCliente -> {/*cuando se obtenga el ID del cliente, se ejecutará este bloque de código*/
+                })
+                .thenCompose(idCliente -> {/*cuando se obtenga el ID del cliente, se ejecutará este bloque de código*/
 
                     if (idCliente == null) {/*si el id es null */
-                        
+
                         javafx.application.Platform.runLater(() -> {/*Mostrar la alerta desde el hilo de la interfaz gráfica (JavaFX)*/
 
                             var dlg = new javafx.scene.control.Alert(javafx.scene.control.Alert.AlertType.WARNING);/*Creá una ventanita que avise al usuario que pasó algo

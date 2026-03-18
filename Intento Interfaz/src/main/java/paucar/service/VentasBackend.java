@@ -60,6 +60,7 @@ public class VentasBackend {
         }
 
     }
+
     // ============================================================
     //                    VENTAS
     // ============================================================
@@ -217,6 +218,10 @@ public class VentasBackend {
                         } else if (nombre.toLowerCase().startsWith("mesa ")) {
                             tipoCli = TipoCliente.MESA;
                         }
+                        Long idVenta = null;
+                        if (n.hasNonNull("idVenta")) {
+                            idVenta = n.get("idVenta").asLong();
+                        }
 
                         var fila = new java.util.HashMap<String, Object>();
                         fila.put("nombre", nombre);
@@ -226,6 +231,7 @@ public class VentasBackend {
                         fila.put("observaciones", obs);
                         fila.put("idCliente", idCliente);
                         fila.put("tipoCliente", tipoCli);
+                        fila.put("idVenta", idVenta);
                         out.add(fila);
                     }
                 }
@@ -273,5 +279,29 @@ public class VentasBackend {
             System.err.println("obtenerClientesPorTipo: " + e.getMessage());
         }
         return java.util.List.of();
+    }
+
+    public boolean eliminarVenta(Long idVenta) {
+        try {
+            var request = java.net.http.HttpRequest.newBuilder()
+                    .uri(java.net.URI.create(BASE_URL + "/ventas/" + idVenta))
+                    .DELETE()
+                    .build();
+
+            var response = http.send(
+                    request,
+                    java.net.http.HttpResponse.BodyHandlers.ofString()
+            );
+
+            return response.statusCode() == 204;
+
+        } catch (java.io.IOException e) {
+            System.err.println("Error recargar ventas (IO): " + e.getMessage());
+            return false;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            System.err.println("Error recargar ventas (Interrupted): " + e.getMessage());
+            return false;
+        }
     }
 }
